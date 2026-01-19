@@ -1,0 +1,140 @@
+# yaml-language-server: $schema=https://activate.parallel.works/workflow.schema.json
+---
+# Hello World - Session workflow for SLURM/PBS/Controller execution
+# Modify service scripts in workflows/hello-world/ directory
+
+permissions:
+  - "*"
+sessions:
+  session:
+    useTLS: false
+    redirect: false
+
+jobs:
+  # =============================================================================
+  # PREPROCESSING - runs on controller
+  # =============================================================================
+  preprocessing:
+    steps:
+      - name: Checkout service scripts
+        uses: parallelworks/checkout
+        ssh:
+          remoteHost: ${{ inputs.resource.ip }}
+        with:
+          repo: https://github.com/parallelworks/interactive_session.git
+          branch: refactor-2026
+          sparse_checkout:
+            - workflows/${{ inputs.workflow_dir }}
+            - utils
+
+      - name: Transfer inputs from user workspace
+        run: |
+          set -e
+          REMOTE_JOB_DIR="./pw/jobs/${PW_WORKFLOW_NAME}/${PW_JOB_NUMBER}/"
+          if [ -f inputs.sh ]; then
+            scp inputs.sh ${{ inputs.resource.ip }}:${REMOTE_JOB_DIR}
+          fi
+
+  # =============================================================================
+  # SESSION RUNNER - runs the service script on compute node
+  # =============================================================================
+  session_runner:
+    needs: [preprocessing]
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Submit session script
+        early-cancel: any-job-failed
+        uses: marketplace/job_runner/v4.0
+        with:
+          resource: ${{ inputs.resource }}
+          rundir: "${PW_PARENT_JOB_DIR}"
+          scheduler: ${{ inputs.resource.schedulerType != '' }}
+          slurm:
+            is_disabled: ${{ inputs.resource.schedulerType != 'slurm' }}
+          pbs:
+            is_disabled: ${{ inputs.resource.schedulerType != 'pbs' }}
+          use_existing_script: true
+          script_path: "${PW_PARENT_JOB_DIR}/workflows/${{ inputs.workflow_dir }}/start.sh"
+
+      - name: Notify job ended
+        early-cancel: any-job-failed
+        run: touch job.ended
+
+  # ==============================================================================
+  # WAIT FOR SERVICE - wait for job to start and get connection info
+  # ==============================================================================
+  wait_for_service:
+    needs: [preprocessing]
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Wait for service ready
+        early-cancel: any-job-failed
+        run: |
+          set -e
+          # Source the reusable wait script
+          source utils/wait_service.sh
+
+  # =============================================================================
+  # UPDATE SESSION - configure session proxy
+  # =============================================================================
+  update_session:
+    needs: [wait_for_service]
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Get local port
+        run: |
+          local_port=$(pw agent open-port)
+          echo "local_port=${local_port}" | tee -a $OUTPUTS
+
+      - name: Update session
+        uses: parallelworks/update-session
+        with:
+          target: ${{ inputs.resource.id }}
+          name: ${{ sessions.session }}
+          remoteHost: ${{ needs.wait_for_service.outputs.HOSTNAME }}
+          remotePort: ${{ needs.wait_for_service.outputs.SESSION_PORT }}
+          local_port: ${{ needs.update_session.outputs.local_port }}
+
+  # =============================================================================
+  # COMPLETE - print connection info
+  # =============================================================================
+  complete:
+    needs: [update_session]
+    steps:
+      - name: Session ready
+        run: |
+          local_port="${{ needs.update_session.outputs.local_port }}"
+          basepath="/me/session/${PW_USER}/${{ sessions.session }}"
+          echo "=========================================="
+          echo "Interactive Session is ready!"
+          echo "=========================================="
+          echo "  Proxy URL: https://${PW_PLATFORM_HOST}${basepath}/"
+          echo "  Local tunnel: ssh -L ${local_port}:localhost:${local_port} -o ProxyCommand=\"pw ssh --proxy-command %h\" ${PW_USER}@workspace"
+          echo "  Then access: http://localhost:${local_port}/"
+          echo "=========================================="
+
+"on":
+  execute:
+    inputs:
+      resource:
+        type: compute-clusters
+        label: Service host
+        include-workspace: false
+        autoselect: true
+
+      workflow_dir:
+        type: string
+        default: hello-world
+        hidden: true
+
+      hello:
+        type: group
+        label: Hello World Settings
+        items:
+          message:
+            type: string
+            label: Greeting Message
+            default: "Hello World"
