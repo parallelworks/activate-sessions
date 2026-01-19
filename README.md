@@ -17,7 +17,7 @@ ACTIVATE interactive session workflow templates for Parallel Works. Each workflo
 
 For platform usage details, see:
 - [Sessions Documentation](https://parallelworks.com/docs/run/sessions)
-- [Interactive Workflows](https://parallelworks.com/docs/workflows/interactive-sessions)
+- [Building Workflows](https://parallelworks.com/docs/run/workflows-and-apps/building-workflows)
 
 ## Repository Layout
 
