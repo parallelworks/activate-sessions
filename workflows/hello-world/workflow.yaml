@@ -21,8 +21,8 @@ jobs:
         ssh:
           remoteHost: ${{ inputs.resource.ip }}
         with:
-          repo: https://github.com/parallelworks/interactive_session.git
-          branch: refactor-2026
+          repo: https://github.com/parallelworks/activate-sessions.git
+          branch: main
           sparse_checkout:
             - workflows/${{ inputs.workflow_dir }}
             - utils
