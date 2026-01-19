@@ -1,4 +1,4 @@
-# activate-sessions
+# ACTIVATE Sessions
 
 ACTIVATE interactive session workflow templates for Parallel Works. Each workflow launches a service (Jupyter, desktop, web app, etc.), waits for it to be ready, and exposes it through the platform session proxy.
 
