@@ -22,9 +22,16 @@ echo "=========================================="
 echo "Hello World Setup (Controller Node)"
 echo "=========================================="
 
+# Normalize job directory path (remove trailing slash if present)
+JOB_DIR="${PW_PARENT_JOB_DIR%/}"
+echo "Job directory: ${JOB_DIR}"
+echo "Working directory: $(pwd)"
+
 # Source inputs if available
 if [ -f inputs.sh ]; then
   source inputs.sh
+elif [ -f "${JOB_DIR}/inputs.sh" ]; then
+  source "${JOB_DIR}/inputs.sh"
 fi
 
 # =============================================================================
@@ -60,11 +67,10 @@ echo "Python found: ${PYTHON_CMD}"
 mkdir -p logs
 
 # =============================================================================
-# Write setup complete marker
+# Write setup complete marker to job directory
 # =============================================================================
-# start.sh can check for this file to verify setup completed successfully
-# This is optional but useful for debugging
-touch SETUP_COMPLETE
+# start.sh and wait_service.sh expect coordination files in $PW_PARENT_JOB_DIR
+touch "${JOB_DIR}/SETUP_COMPLETE"
 
 echo "=========================================="
 echo "Setup complete!"
@@ -72,4 +78,5 @@ echo "=========================================="
 echo "Shared resources prepared:"
 echo "  - Python: ${PYTHON_CMD}"
 echo "  - Logs directory: $(pwd)/logs"
+echo "  - SETUP_COMPLETE: ${JOB_DIR}/SETUP_COMPLETE"
 echo "=========================================="
