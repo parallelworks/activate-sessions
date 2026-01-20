@@ -9,7 +9,7 @@ permissions:
 sessions:
   session:
     useTLS: false
-    redirect: true  # VNC uses redirect with custom slug for autoconnect
+    redirect: true # VNC uses redirect with custom slug for autoconnect
 
 jobs:
   # =============================================================================
@@ -18,9 +18,9 @@ jobs:
   preprocessing:
     steps:
       - name: Checkout service scripts
+        uses: parallelworks/checkout
         ssh:
           remoteHost: ${{ inputs.resource.ip }}
-        uses: parallelworks/checkout
         with:
           repo: https://github.com/parallelworks/activate-sessions.git
           branch: migrate/desktop
@@ -36,22 +36,23 @@ jobs:
             scp inputs.sh ${{ inputs.resource.ip }}:${REMOTE_JOB_DIR}
           fi
 
+      - name: Run controller setup
+        ssh:
+          remoteHost: ${{ inputs.resource.ip }}
+        run: |
+          set -e
+          cd workflows/${{ inputs.workflow_dir }}
+          bash setup.sh
+
   # =============================================================================
-  # SESSION RUNNER - runs controller setup and service script
+  # SESSION RUNNER - runs start.sh on compute node
   # =============================================================================
   session_runner:
     needs: [preprocessing]
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
-      # Step 1: Run controller setup (downloads, containers, password generation)
-      - name: Run controller setup
-        run: |
-          set -e
-          cd workflows/${{ inputs.workflow_dir }}
-          bash setup.sh
-
-      # Step 2: Submit start.sh to compute node
+      # Submit start.sh to compute node
       - name: Submit session script
         early-cancel: any-job-failed
         uses: marketplace/job_runner/v4.0
@@ -89,7 +90,7 @@ jobs:
   # UPDATE SESSION - configure session proxy with custom slug
   # =============================================================================
   update_session:
-    needs: [wait_for_service]
+    needs: [preprocessing, wait_for_service]
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
@@ -103,7 +104,7 @@ jobs:
         with:
           target: ${{ inputs.resource.id }}
           name: ${{ sessions.session }}
-          slug: ${{ needs.session_runner.outputs.slug }}
+          slug: ${{ needs.preprocessing.outputs.slug }}
           remoteHost: ${{ needs.wait_for_service.outputs.HOSTNAME }}
           remotePort: ${{ needs.wait_for_service.outputs.SESSION_PORT }}
           local_port: ${{ needs.update_session.outputs.local_port }}

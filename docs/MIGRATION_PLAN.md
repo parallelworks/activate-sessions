@@ -23,7 +23,7 @@ Migrating the VNC server workflow from the legacy `interactive_session` reposito
 |--------|---------------------------|---------------------|
 | Job Submitter | `marketplace/script_submitter/v3.5` | `marketplace/job_runner/v4.0` |
 | Script Structure | 3 separate scripts (controller, start, kill) | 2 scripts: `setup.sh` + `start.sh` |
-| Controller/Compute Split | `controller-v3.sh` → controller, `start-template-v3.sh` → compute | `setup.sh` → session_runner step 1 (controller), `start.sh` → session_runner step 2 (compute) |
+| Controller/Compute Split | `controller-v3.sh` → controller, `start-template-v3.sh` → compute | `setup.sh` → preprocessing (controller), `start.sh` → session_runner (compute) |
 | Script Location | `parallelworks/interactive_session` repo | `parallelworks/activate-sessions` repo |
 | Coordination Files | Mixed custom logic | Standardized via `utils/wait_service.sh` |
 | Session URL | Custom slug with embedded password | Same (preserved for autoconnect) |

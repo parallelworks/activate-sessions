@@ -54,8 +54,8 @@ Workflows use two scripts that run at different stages:
 
 Each workflow follows this 5-job pattern:
 
-1. **preprocessing** - Checkout scripts from git to the remote host
-2. **session_runner** - Step 1: runs `setup.sh`, Step 2: submits `start.sh` via job_runner
+1. **preprocessing** - Checkout scripts from git, run `setup.sh`
+2. **session_runner** - Submit `start.sh` to compute node via job_runner
 3. **wait_for_service** - Waits for service to be ready (checks for coordination files)
 4. **update_session** - Configures the session proxy
 5. **complete** - Displays connection URLs

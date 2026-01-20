@@ -19,8 +19,8 @@ Interactive session workflows use **two scripts** that run at different stages:
 
 | Script | Runs On | When | Purpose |
 |--------|---------|------|---------|
-| `setup.sh` | Controller/login node | session_runner, step 1 | Download dependencies, install containers, prepare shared resources |
-| `start.sh` | Compute node (or controller if no scheduler) | session_runner, step 2 (via job_runner) | Start the service, write coordination files, keep session alive |
+| `setup.sh` | Controller/login node | preprocessing (last step) | Download dependencies, install containers, prepare shared resources |
+| `start.sh` | Compute node (or controller if no scheduler) | session_runner (via job_runner) | Start the service, write coordination files, keep session alive |
 
 **Why separate them?**
 - Controller nodes typically have internet access; compute nodes often don't
@@ -94,12 +94,33 @@ Key sections to modify:
 |---------|---------|
 | `permissions` | Access controls (use `"*"` for open) |
 | `sessions` | Define the session name (e.g., `session`) |
-| `preprocessing` | Checkout your scripts from git |
-| `session_runner` | Step 1: run setup.sh, Step 2: submit start.sh via job_runner |
+| `preprocessing` | Checkout scripts from git, run setup.sh |
+| `session_runner` | Submit start.sh to compute node via job_runner |
 | `wait_for_service` | Wait for your service to respond |
 | `update_session` | Configure session proxy |
 | `complete` | Display connection info |
 | `on.execute.inputs` | Define your input form |
+
+#### The preprocessing Pattern
+
+```yaml
+preprocessing:
+  ssh:
+    remoteHost: ${{ inputs.resource.ip }}
+  steps:
+    - name: Checkout service scripts
+      uses: parallelworks/checkout
+      with:
+        repo: https://github.com/your-org/your-repo.git
+        branch: main
+        sparse_checkout:
+          - workflows/${{ inputs.workflow_dir }}
+
+    - name: Run controller setup
+      run: |
+        cd workflows/${{ inputs.workflow_dir }}
+        bash setup.sh
+```
 
 #### The session_runner Pattern
 
@@ -109,13 +130,6 @@ session_runner:
   ssh:
     remoteHost: ${{ inputs.resource.ip }}
   steps:
-    # Step 1: Run controller setup (downloads, containers, password generation)
-    - name: Run controller setup
-      run: |
-        cd workflows/${{ inputs.workflow_dir }}
-        bash setup.sh
-
-    # Step 2: Submit start.sh to compute node
     - name: Submit session script
       uses: marketplace/job_runner/v4.0
       with:
@@ -180,26 +194,34 @@ If you need to transfer files from the user workspace, add a preprocessing step:
 ## Workflow Jobs Explained
 
 ### preprocessing
-Checks out your service scripts from git to the remote host.
+Checks out your service scripts from git and runs `setup.sh` on the remote host.
 
 ```yaml
-- uses: parallelworks/checkout
-  with:
-    repo: https://github.com/your-org/your-repo.git
-    branch: main
-    sparse_checkout:
-      - workflows/my-service
+preprocessing:
+  ssh:
+    remoteHost: ${{ inputs.resource.ip }}
+  steps:
+    - name: Checkout service scripts
+      uses: parallelworks/checkout
+      with:
+        repo: https://github.com/your-org/your-repo.git
+        branch: main
+        sparse_checkout:
+          - workflows/${{ inputs.workflow_dir }}
+
+    - name: Run controller setup
+      run: |
+        cd workflows/${{ inputs.workflow_dir }}
+        bash setup.sh
 ```
 
 ### session_runner
-Has two sequential steps:
-1. **Run setup.sh** on the controller (downloads, containers, setup)
-2. **Submit start.sh** to compute node via `marketplace/job_runner/v4.0`
+Submits `start.sh` to the compute node via `marketplace/job_runner/v4.0`.
 
 Supports:
-- **Controller mode** - Both steps run on the login node
-- **SLURM** - Step 1 on controller, Step 2 submitted via sbatch
-- **PBS** - Step 1 on controller, Step 2 submitted via qsub
+- **Controller mode** - Script runs on the login node
+- **SLURM** - Script submitted via sbatch
+- **PBS** - Script submitted via qsub
 
 ### wait_for_service
 Waits for your service to be ready. Uses `utils/wait_service.sh`:
