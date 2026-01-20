@@ -1,0 +1,172 @@
+# yaml-language-server: $schema=https://activate.parallel.works/workflow.schema.json
+---
+# Desktop - Interactive remote desktop session workflow
+# Supports TigerVNC, TurboVNC, KasmVNC, and Singularity containers
+
+permissions:
+  - "*"
+
+sessions:
+  session:
+    useTLS: false
+    redirect: true # Desktop uses redirect with custom slug for autoconnect
+
+jobs:
+  # =============================================================================
+  # PREPROCESSING
+  # =============================================================================
+  preprocessing:
+    steps:
+      - name: Checkout service scripts
+        ssh:
+          remoteHost: ${{ inputs.resource.ip }}
+        uses: parallelworks/checkout
+        with:
+          repo: https://github.com/parallelworks/activate-sessions.git
+          branch: migrate/desktop
+          sparse_checkout:
+            - workflows/${{ inputs.workflow_dir }}
+            - utils
+
+      - name: Transfer inputs from user workspace
+        run: |
+          set -e
+          REMOTE_JOB_DIR="./pw/jobs/${PW_WORKFLOW_NAME}/${PW_JOB_NUMBER}/"
+          if [ -f inputs.sh ]; then
+            scp inputs.sh ${{ inputs.resource.ip }}:${REMOTE_JOB_DIR}
+          fi
+
+  # =============================================================================
+  # SESSION RUNNER - runs controller setup and service script
+  # =============================================================================
+  session_runner:
+    needs: [preprocessing]
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      # Step 1: Run controller setup (downloads, containers, password generation)
+      - name: Run controller setup
+        run: |
+          set -e
+          cd workflows/${{ inputs.workflow_dir }}
+          bash setup.sh
+
+      # Step 2: Submit start.sh to compute node
+      - name: Submit session script
+        early-cancel: any-job-failed
+        uses: marketplace/job_runner/v4.0
+        with:
+          resource: ${{ inputs.resource }}
+          rundir: "${PW_PARENT_JOB_DIR}"
+          scheduler: ${{ inputs.resource.schedulerType != '' }}
+          slurm:
+            is_disabled: ${{ inputs.resource.schedulerType != 'slurm' }}
+          pbs:
+            is_disabled: ${{ inputs.resource.schedulerType != 'pbs' }}
+          use_existing_script: true
+          script_path: "${PW_PARENT_JOB_DIR}/workflows/${{ inputs.workflow_dir }}/start.sh"
+
+      - name: Notify job ended
+        early-cancel: any-job-failed
+        run: touch job.ended
+
+  # ==============================================================================
+  # WAIT FOR SERVICE - wait for job to start and get connection info
+  # ==============================================================================
+  wait_for_service:
+    needs: [preprocessing]
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Wait for desktop ready
+        early-cancel: any-job-failed
+        run: |
+          set -e
+          # Source the reusable wait script
+          source utils/wait_service.sh
+
+  # =============================================================================
+  # UPDATE SESSION - configure session proxy with custom slug
+  # =============================================================================
+  update_session:
+    needs: [wait_for_service]
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Get local port
+        run: |
+          local_port=$(pw agent open-port)
+          echo "local_port=${local_port}" | tee -a $OUTPUTS
+
+      - name: Update session with custom slug
+        uses: parallelworks/update-session
+        with:
+          target: ${{ inputs.resource.id }}
+          name: ${{ sessions.session }}
+          slug: ${{ needs.session_runner.outputs.slug }}
+          remoteHost: ${{ needs.wait_for_service.outputs.HOSTNAME }}
+          remotePort: ${{ needs.wait_for_service.outputs.SESSION_PORT }}
+          local_port: ${{ needs.update_session.outputs.local_port }}
+
+  # =============================================================================
+  # COMPLETE - print connection info
+  # =============================================================================
+  complete:
+    needs: [update_session]
+    steps:
+      - name: Display connection info
+        run: |
+          basepath="/me/session/${PW_USER}/${{ sessions.session }}"
+          echo "=========================================="
+          echo "Desktop Session is ready!"
+          echo "=========================================="
+          echo "  Connect via: ${PW_PLATFORM_HOST}${basepath}/"
+          echo "=========================================="
+
+"on":
+  execute:
+    inputs:
+      resource:
+        type: compute-clusters
+        label: Service host
+        include-workspace: false
+        autoselect: true
+
+      workflow_dir:
+        type: string
+        default: desktop
+        hidden: true
+
+      desktop:
+        type: group
+        label: Desktop Settings
+        items:
+          environment:
+            type: dropdown
+            label: Desktop Environment
+            default: auto
+            options:
+              - label: Auto-detect
+                value: auto
+              - label: GNOME
+                value: gnome
+              - label: XFCE
+                value: xfce
+              - label: MATE
+                value: mate
+              - label: Cinnamon
+                value: cinnamon
+              - label: KDE Plasma
+                value: kde
+              - label: LXDE
+                value: lxde
+          resolution:
+            type: dropdown
+            label: Screen Resolution
+            default: 1280x1024
+            options:
+              - { label: "1024x768", value: "1024x768" }
+              - { label: "1280x720", value: "1280x720" }
+              - { label: "1280x1024", value: "1280x1024" }
+              - { label: "1920x1080", value: "1920x1080" }
+              - { label: "2560x1440", value: "2560x1440" }
