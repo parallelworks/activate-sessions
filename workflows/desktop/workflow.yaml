@@ -42,6 +42,7 @@ jobs:
         run: |
           set -e
           cd workflows/${{ inputs.workflow_dir }}
+          export PW_SESSION_NAME="${{ sessions.session }}"
           bash setup.sh
 
   # =============================================================================
