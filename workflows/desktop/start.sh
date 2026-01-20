@@ -174,8 +174,12 @@ if [ -z "${service_vnc_type}" ]; then
       fi
 
       # Sparse checkout vnc container to tmp, then join and move to cache
-      if [ ! -f "${CONTAINER_DIR}/vncserver.sif" ]; then
+      # Check if exists AND is non-empty (LFS pointer files are small)
+      if [ ! -f "${CONTAINER_DIR}/vncserver.sif" ] || [ ! -s "${CONTAINER_DIR}/vncserver.sif" ]; then
         echo "Fetching vncserver container via sparse checkout (~1.2GB)..."
+
+        # Remove empty/corrupt file if it exists
+        rm -f "${CONTAINER_DIR}/vncserver.sif" 2>/dev/null || true
 
         # Pull to tmp location first
         TMP_CONTAINER_DIR="$(mktemp -d)/singularity-containers"
@@ -188,6 +192,8 @@ if [ -z "${service_vnc_type}" ]; then
         echo "vnc/*" > .git/info/sparse-checkout
         git lfs install
         git pull origin main
+        # Explicitly fetch LFS files (git pull doesn't always do this in sparse checkout)
+        git lfs pull
 
         # Join SIF parts if split, otherwise just copy
         mkdir -p "${CONTAINER_DIR}"

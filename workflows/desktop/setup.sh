@@ -74,8 +74,12 @@ fi
 # =============================================================================
 # Pull nginx container via sparse checkout + Git LFS
 # =============================================================================
-if [ ! -f "${CONTAINER_DIR}/nginx.sif" ]; then
+# Check if nginx.sif exists AND is non-empty (LFS pointer files are small)
+if [ ! -f "${CONTAINER_DIR}/nginx.sif" ] || [ ! -s "${CONTAINER_DIR}/nginx.sif" ]; then
     echo "Fetching nginx container via sparse checkout..."
+
+    # Remove empty/corrupt file if it exists
+    rm -f "${CONTAINER_DIR}/nginx.sif" 2>/dev/null || true
 
     # Pull to tmp location first
     TMP_CONTAINER_DIR="$(mktemp -d)/singularity-containers"
@@ -88,6 +92,8 @@ if [ ! -f "${CONTAINER_DIR}/nginx.sif" ]; then
     echo "nginx/*" > .git/info/sparse-checkout
     git lfs install
     git pull origin main
+    # Explicitly fetch LFS files (git pull doesn't always do this in sparse checkout)
+    git lfs pull
 
     # Join SIF parts if split, otherwise just copy
     mkdir -p "${CONTAINER_DIR}"
