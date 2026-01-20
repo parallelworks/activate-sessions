@@ -151,7 +151,7 @@ if [ -z "${service_vnc_type}" ]; then
     else
       # Try to download the vncserver container
       echo "vncserver not installed and container not found. Downloading..."
-      CONTAINER_DIR="${HOME}/singularity-containers"
+      CONTAINER_DIR="${HOME}/pw/singularity"
 
       # Ensure Git LFS is available
       if ! git lfs version >/dev/null 2>&1; then

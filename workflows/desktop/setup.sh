@@ -32,7 +32,7 @@ fi
 # =============================================================================
 NOVNC_VERSION="v1.6.0"
 SERVICE_PARENT_INSTALL_DIR="${HOME}/pw/software"
-CONTAINER_DIR="${HOME}/singularity-containers"
+CONTAINER_DIR="${HOME}/pw/singularity"
 
 # =============================================================================
 # Download noVNC from GitHub releases
