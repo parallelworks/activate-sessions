@@ -90,11 +90,14 @@ if [ ! -f "${CONTAINER_DIR}/nginx.sif" ]; then
     mkdir -p "${CONTAINER_DIR}"
 
     # Check if there are split parts (nginx.sif.00, nginx.sif.01, etc.)
-    if ls nginx/nginx-unprivileged.sif.* 2>/dev/null | head -1; then
+    if compgen -G "nginx/nginx-unprivileged.sif.*" > /dev/null 2>&1; then
         echo "Joining SIF parts..."
         cat nginx/nginx-unprivileged.sif.* > "${CONTAINER_DIR}/nginx.sif"
     elif [ -f "nginx/nginx-unprivileged.sif" ]; then
+        echo "Copying nginx container..."
         cp nginx/nginx-unprivileged.sif "${CONTAINER_DIR}/nginx.sif"
+    else
+        echo "WARNING: nginx container not found after pull" >&2
     fi
 
     cd - >/dev/null

@@ -187,11 +187,14 @@ if [ -z "${service_vnc_type}" ]; then
         mkdir -p "${CONTAINER_DIR}"
 
         # Check if there are split parts (vncserver.sif.00, vncserver.sif.01, etc.)
-        if ls vnc/vncserver.sif.* 2>/dev/null | head -1; then
+        if compgen -G "vnc/vncserver.sif.*" > /dev/null 2>&1; then
           echo "Joining SIF parts..."
           cat vnc/vncserver.sif.* > "${CONTAINER_DIR}/vncserver.sif"
         elif [ -f "vnc/vncserver.sif" ]; then
+          echo "Copying vncserver container..."
           cp vnc/vncserver.sif "${CONTAINER_DIR}/vncserver.sif"
+        else
+          echo "WARNING: vncserver container not found after pull" >&2
         fi
 
         cd - >/dev/null
