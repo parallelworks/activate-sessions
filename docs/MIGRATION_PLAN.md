@@ -22,7 +22,7 @@ Migrating the VNC server workflow from the legacy `interactive_session` reposito
 |--------|---------------------------|---------------------|
 | Job Submitter | `marketplace/script_submitter/v3.5` | `marketplace/job_runner/v4.0` |
 | Script Structure | 3 separate scripts (controller, start, kill) | 2 scripts: `setup.sh` + `start.sh` |
-| Controller/Compute Split | `controller-v3.sh` → controller, `start-template-v3.sh` → compute | `setup.sh` → controller (preprocessing), `start.sh` → compute (session_runner) |
+| Controller/Compute Split | `controller-v3.sh` → controller, `start-template-v3.sh` → compute | `setup.sh` → session_runner step 1 (controller), `start.sh` → session_runner step 2 (compute) |
 | Script Location | `parallelworks/interactive_session` repo | `parallelworks/activate-sessions` repo |
 | Coordination Files | Mixed custom logic | Standardized via `utils/wait_service.sh` |
 | Session URL | Custom slug with embedded password | Same (preserved for autoconnect) |
@@ -42,15 +42,15 @@ mkdir -p /home/mattshax/activate-sessions/workflows/vncserver
 
 The new workflow follows the hello-world pattern with 5 jobs:
 
-1. **preprocessing** - Checkout scripts, run `setup.sh` on controller
-2. **session_runner** - Submit `start.sh` to compute node via `marketplace/job_runner/v4.0`
+1. **preprocessing** - Checkout scripts only
+2. **session_runner** - Step 1: run `setup.sh` on controller, Step 2: submit `start.sh` to compute
 3. **wait_for_service** - Wait for VNC to be ready
 4. **update_session** - Configure session proxy with custom slug
 5. **complete** - Display connection info
 
 Key changes from legacy:
 - Move SSH config to job level (not per-step)
-- Call `setup.sh` explicitly in preprocessing
+- Call `setup.sh` in session_runner step 1 (before job submission)
 - Remove inline script generation
 - Use `utils/wait_service.sh` for coordination
 
@@ -111,32 +111,34 @@ Implementation:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ preprocessing (controller node)                                 │
+│ preprocessing                                                   │
 ├─────────────────────────────────────────────────────────────────┤
 │ 1. Checkout scripts from activate-sessions repo                 │
-│ 2. Run setup.sh →                                               │
-│    - Download noVNC from GitHub                                 │
-│    - Install Git LFS if needed                                  │
-│    - Pull containers (nginx, vncserver) via LFS                 │
-│ 3. Generate VNC password, build slug                            │
+│ 2. Transfer user inputs                                         │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ session_runner (compute node via SLURM/PBS)                     │
+│ session_runner (sequential steps on controller)                 │
 ├─────────────────────────────────────────────────────────────────┤
-│ 1. Execute start.sh →                                           │
-│    - Detect VNC type (TigerVNC/TurboVNC/KasmVNC/container)      │
-│    - Find available display/port                                │
-│    - Start VNC server with password                             │
-│    - Start noVNC proxy                                          │
-│    - Write HOSTNAME, SESSION_PORT, job.started                  │
-│ 2. Wait for workflow cancellation                               │
+│ Step 1: Run setup.sh (on controller) →                          │
+│   - Download noVNC from GitHub                                  │
+│   - Install Git LFS if needed                                   │
+│   - Pull containers (nginx, vncserver) via LFS                  │
+│   - Generate VNC password, build slug                           │
+│                                                                 │
+│ Step 2: Submit start.sh to compute node →                       │
+│   - Detect VNC type (TigerVNC/TurboVNC/KasmVNC/container)       │
+│   - Find available display/port                                 │
+│   - Start VNC server with password                              │
+│   - Start noVNC proxy                                           │
+│   - Write HOSTNAME, SESSION_PORT, job.started                   │
+│   - Wait for workflow cancellation                              │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ wait_for_service (controller node)                              │
+│ wait_for_service                                                │
 ├─────────────────────────────────────────────────────────────────┤
 │ - Wait for job.started file                                     │
 │ - Read HOSTNAME and SESSION_PORT                                │
@@ -145,7 +147,7 @@ Implementation:
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ update_session (controller node)                                │
+│ update_session                                                  │
 ├─────────────────────────────────────────────────────────────────┤
 │ - Allocate local port for proxy                                 │
 │ - Configure session with custom slug (embedded password)        │
@@ -153,7 +155,7 @@ Implementation:
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ complete (controller node)                                      │
+│ complete                                                        │
 ├─────────────────────────────────────────────────────────────────┤
 │ - Display connection URL                                        │
 └─────────────────────────────────────────────────────────────────┘
@@ -177,10 +179,10 @@ sessions:
 
 jobs:
   preprocessing:
-    ssh:
-      remoteHost: ${{ inputs.resource.ip }}
     steps:
       - name: Checkout service scripts
+        ssh:
+          remoteHost: ${{ inputs.resource.ip }}
         uses: parallelworks/checkout
         with:
           repo: https://github.com/parallelworks/activate-sessions.git
@@ -189,37 +191,42 @@ jobs:
             - workflows/${{ inputs.workflow_dir }}
             - utils
 
-      - name: Generate password and slug
+      - name: Transfer inputs from user workspace
         run: |
-          # Generate random password
-          password=$(openssl rand -base64 12 | head -c 12)
-          echo "password=${password}" | tee -a $OUTPUTS
-
-          # Build basepath
-          basepath=/me/session/${PW_USER}/${{ sessions.session }}
-
-          # Build slug with embedded password (for autoconnect)
-          if [ -z "${PW_PLATFORM_HOST}" ]; then
-            PW_PLATFORM_HOST=activate.parallel.works
+          REMOTE_JOB_DIR="./pw/jobs/${PW_WORKFLOW_NAME}/${PW_JOB_NUMBER}/"
+          if [ -f inputs.sh ]; then
+            scp inputs.sh ${{ inputs.resource.ip }}:${REMOTE_JOB_DIR}
           fi
-          slug="vnc.html?resize=remote&autoconnect=true&show_dot=true&path=websockify&password=${password}&host=${PW_PLATFORM_HOST}${basepath}/&dt=0"
-          echo "slug=${slug}" | tee -a $OUTPUTS
 
   session_runner:
     needs: [preprocessing]
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
+      # Step 1: Run controller setup (downloads, containers, password generation)
+      - name: Run controller setup
+        run: |
+          set -e
+          cd workflows/${{ inputs.workflow_dir }}
+          bash setup.sh
+
+      # Step 2: Submit start.sh to compute node
       - name: Submit session script
+        early-cancel: any-job-failed
         uses: marketplace/job_runner/v4.0
         with:
           resource: ${{ inputs.resource }}
           rundir: "${PW_PARENT_JOB_DIR}"
           scheduler: ${{ inputs.resource.schedulerType != '' }}
+          slurm:
+            is_disabled: ${{ inputs.resource.schedulerType != 'slurm' }}
+          pbs:
+            is_disabled: ${{ inputs.resource.schedulerType != 'pbs' }}
           use_existing_script: true
           script_path: "${PW_PARENT_JOB_DIR}/workflows/${{ inputs.workflow_dir }}/start.sh"
 
       - name: Notify job ended
+        early-cancel: any-job-failed
         run: touch job.ended
 
   wait_for_service:
@@ -229,7 +236,6 @@ jobs:
     steps:
       - name: Wait for VNC ready
         run: |
-          # Source the reusable wait script
           source utils/wait_service.sh
 
   update_session:
@@ -247,7 +253,7 @@ jobs:
         with:
           target: ${{ inputs.resource.id }}
           name: ${{ sessions.session }}
-          slug: ${{ needs.preprocessing.outputs.slug }}
+          slug: ${{ needs.session_runner.outputs.slug }}
           remoteHost: ${{ needs.wait_for_service.outputs.HOSTNAME }}
           remotePort: ${{ needs.wait_for_service.outputs.SESSION_PORT }}
           local_port: ${{ needs.update_session.outputs.local_port }}
@@ -263,6 +269,7 @@ jobs:
           echo "=========================================="
           echo "  Connect via: ${PW_PLATFORM_HOST}${basepath}/"
           echo "=========================================="
+```
 
 "on":
   execute:
@@ -304,11 +311,17 @@ jobs:
               - {label: "1920x1080", value: "1920x1080"}
 ```
 
-### workflows/vncserver/setup.sh (Controller)
+### workflows/vncserver/setup.sh (Controller, session_runner step 1)
 
 ```bash
 #!/bin/bash
 set -e
+
+[[ "${DEBUG:-}" == "true" ]] && set -x
+
+echo "=========================================="
+echo "VNC Setup (Controller Node)"
+echo "=========================================="
 
 # 1. Download noVNC from GitHub releases
 NOVNC_VERSION="v1.6.0"
@@ -349,26 +362,57 @@ if [ ! -f "nginx/nginx-unprivileged.sif" ]; then
     git lfs pull --include="nginx/*"
 fi
 
-# 4. Write setup complete marker
+# 4. Generate VNC password and slug
+password=$(openssl rand -base64 12 | head -c 12)
+echo "password=${password}" | tee -a $OUTPUTS
+
+# Build basepath
+basepath=/me/session/${PW_USER}/${{ sessions.session }}
+
+# Build slug with embedded password (for autoconnect)
+if [ -z "${PW_PLATFORM_HOST}" ]; then
+    PW_PLATFORM_HOST=activate.parallel.works
+fi
+slug="vnc.html?resize=remote&autoconnect=true&show_dot=true&path=websockify&password=${password}&host=${PW_PLATFORM_HOST}${basepath}/&dt=0"
+echo "slug=${slug}" | tee -a $OUTPUTS
+
+# Write password to file for start.sh to use
+echo "${password}" > VNC_PASSWORD
+
+# 5. Write setup complete marker
 touch SETUP_COMPLETE
 ```
 
-### workflows/vncserver/start.sh (Compute Node)
+### workflows/vncserver/start.sh (Compute Node, session_runner step 2)
 
 ```bash
 #!/bin/bash
 set -e
 
-# 1. Source inputs (includes password from preprocessing)
+[[ "${DEBUG:-}" == "true" ]] && set -x
+
+echo "=========================================="
+echo "VNC Service Starting (Compute Node)"
+echo "=========================================="
+
+# 1. Source inputs (includes password from setup.sh)
 [[ -f inputs.sh ]] && source inputs.sh
 
-# 2. Verify setup completed
+# 2. Read password written by setup.sh
+if [ -f VNC_PASSWORD ]; then
+    password=$(cat VNC_PASSWORD)
+else
+    echo "ERROR: VNC_PASSWORD not found" >&2
+    exit 1
+fi
+
+# 3. Verify setup completed
 if [ ! -f SETUP_COMPLETE ]; then
     echo "ERROR: setup.sh did not complete successfully" >&2
     exit 1
 fi
 
-# 3. VNC detection and configuration
+# 4. VNC detection and configuration
 #    - Detect VNC type (TigerVNC, TurboVNC, KasmVNC, or container)
 #    - Find available display port
 
@@ -548,6 +592,69 @@ trap cleanup EXIT INT TERM
 
 ---
 
+## Feature Parity Checklist
+
+Legacy `general_v4.yaml` capabilities mapped to new implementation:
+
+| Feature | Legacy Implementation | New Implementation | Status |
+|---------|----------------------|-------------------|--------|
+| **Jobs** |
+| Checkout scripts | `parallelworks/checkout` from `interactive_session` repo | `parallelworks/checkout` from `activate-sessions` repo | ✅ Planned |
+| Password generation | In preprocessing, writes to inputs.sh | In setup.sh, writes to VNC_PASSWORD + $OUTPUTS | ✅ Planned |
+| Slug generation | In preprocessing with embedded password | In setup.sh, same format | ✅ Planned |
+| Controller setup | Inline: controller-v3.sh concatenated | setup.sh called in session_runner step 1 | ✅ Planned |
+| Service script | Inline: start-template-v3.sh concatenated | start.sh submitted via job_runner v4.0 | ✅ Planned |
+| Job submission | `script_submitter/v3.5` | `job_runner/v4.0` | ✅ Planned |
+| Wait for job start | Separate `wait_for_job_start` job | Integrated in `utils/wait_service.sh` | ✅ Planned |
+| Get hostname/port | Separate steps in legacy jobs | Integrated in `utils/wait_service.sh` | ✅ Planned |
+| Server health check | Curl in `create_session` job | Curl in `utils/wait_service.sh` | ✅ Planned |
+| Update session | `parallelworks/update-session` with slug | Same, with slug from setup.sh | ✅ Planned |
+| Cleanup | Separate `cleanup` job with branches | `trap EXIT` in start.sh | ✅ Planned |
+| **Inputs** |
+| Cluster selection | `cluster.resource` (compute-clusters) | `resource` (compute-clusters) | ✅ Planned |
+| Scheduler toggle | `cluster.scheduler` boolean | Auto-detected from `resource.schedulerType != ''` | ✅ Simplified |
+| SLURM support | partition, time, scheduler_directives | Via job_runner v4.0 with slurm config | ✅ Supported |
+| PBS support | scheduler_directives | Via job_runner v4.0 with pbs config | ✅ Supported |
+| Desktop selection | Inline detection in start-template | User input: auto/gnome/xfce/mate + detection | ✅ Enhanced |
+| noVNC location | `service.novnc_parent_install_dir` (hidden) | Hardcoded `${HOME}/pw/software` | ✅ Simplified |
+| noVNC version | `service.novnc_tgz_basename` (hidden) | Hardcoded v1.6.0 | ✅ Simplified |
+| **VNC Types** |
+| TigerVNC | Full support in start-template-v3.sh | Preserve full support | ✅ Planned |
+| TurboVNC | Full support in start-template-v3.sh | Preserve full support | ✅ Planned |
+| KasmVNC | Full support with nginx proxy in start-template-v3.sh | Preserve full support | ✅ Planned |
+| Singularity container | Fallback when no vncserver installed | Preserve fallback via Git LFS | ✅ Planned |
+| **Dependencies** |
+| noVNC download | Sparse checkout from interactive_session | Direct curl from GitHub | ✅ Changed |
+| nginx container | Sparse checkout + oras fallback | Git LFS from singularity-containers | ✅ Changed |
+| vncserver container | Sparse checkout + oras fallback | Git LFS from singularity-containers | ✅ Changed |
+| Git LFS install | oras download fallback | Scripts from singularity-containers repo | ✅ Changed |
+| **Session Config** |
+| redirect | `true` | `true` | ✅ Same |
+| useTLS | Not set (default) | `false` | ✅ Explicit |
+| Permissions | `"*"` | `"*"` | ✅ Same |
+| **Cleanup** |
+| Controller cleanup | Runs cancel.sh on controller | trap EXIT runs on compute node | ⚠️ Changed behavior |
+| Compute cleanup | SSH to compute node, runs cancel.sh | trap EXIT runs on compute node | ⚠️ Changed behavior |
+| cancel.sh content | Kills VNC, removes .vnc files | Integrated into trap EXIT | ✅ Consolidated |
+
+**Notes on Cleanup Changes:**
+- Legacy: Separate cleanup job that SSHs to compute node to run cancel.sh
+- New: `trap EXIT` in start.sh runs on the compute node itself when the script exits
+- This is cleaner and more reliable since the cleanup runs where the process is running
+
+---
+
+## Script Mapping Summary
+
+| Legacy Script | Lines | New Script | Lines (est) | Notes |
+|---------------|-------|-------------|-------------|-------|
+| `controller-v3.sh` | ~150 | `setup.sh` | ~100 | Downloads via Git LFS instead of sparse checkout |
+| `start-template-v3.sh` | ~670 | `start.sh` | ~650 | Remove cancel.sh generation, add trap EXIT |
+| `kill-template.sh` | ~12 | (in `start.sh`) | ~10 | Integrated via trap EXIT |
+| **Total** | **~832** | **2 scripts** | **~750** | Consolidated and simplified |
+
+---
+
 ## Testing Checklist
 
 After migration, test:
@@ -562,6 +669,20 @@ After migration, test:
 - [ ] Session connection via proxy
 - [ ] Cleanup on workflow cancellation
 - [ ] Desktop environment auto-detection
+
+## Features Simplified or Removed
+
+| Legacy Feature | Status | Notes |
+|----------------|--------|-------|
+| `targetType` dropdown (compute-cluster vs kubernetes-cluster) | Removed | New workflow auto-detects from resource type |
+| `cluster.scheduler` boolean toggle | Removed | Auto-detected from `resource.schedulerType != ''` |
+| `service.novnc_parent_install_dir` hidden input | Removed | Hardcoded to `${HOME}/pw/software` |
+| `service.novnc_tgz_basename` hidden input | Removed | Hardcoded to `v1.6.0` |
+| `org.JUICE_TOKEN` support | Not carried forward | Can be added if needed via inputs.sh |
+| Separate `cleanup` job | Removed | Replaced by `trap EXIT` in start.sh |
+| Inline script generation | Removed | Pre-written scripts instead of bash concatenation |
+| Sparse checkout from interactive_session repo | Removed | Using activate-sessions repo with direct downloads |
+| oras container download fallback | Removed | Git LFS only from singularity-containers repo |
 
 ---
 

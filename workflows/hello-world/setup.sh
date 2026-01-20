@@ -1,7 +1,9 @@
 #!/bin/bash
 # setup.sh - Hello World Setup Script (runs on controller node)
 #
-# This script runs ONCE on the controller/login node during the preprocessing job.
+# This script runs on the controller/login node in STEP 1 of the session_runner job.
+# It runs BEFORE start.sh is submitted to the compute node.
+#
 # Use it to:
 # - Download dependencies that require internet access
 # - Set up shared resources accessible by compute nodes
