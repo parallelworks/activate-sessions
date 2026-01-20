@@ -12,13 +12,13 @@ sessions:
 
 jobs:
   # =============================================================================
-  # PREPROCESSING - runs on controller node
+  # PREPROCESSING
   # =============================================================================
   preprocessing:
-    ssh:
-      remoteHost: ${{ inputs.resource.ip }}
     steps:
       - name: Checkout service scripts
+        ssh:
+          remoteHost: ${{ inputs.resource.ip }}
         uses: parallelworks/checkout
         with:
           repo: https://github.com/parallelworks/activate-sessions.git
@@ -36,6 +36,8 @@ jobs:
           fi
 
       - name: Run controller setup
+        ssh:
+          remoteHost: ${{ inputs.resource.ip }}
         run: |
           set -e
           cd workflows/${{ inputs.workflow_dir }}
