@@ -37,7 +37,7 @@ attempt=1
 while [ ! -f "${JOB_STARTED_FILE}" ]; do
   if [ -f "${JOB_ENDED_FILE}" ]; then
     echo "$(date) ERROR: Job ended before it started" >&2
-    exit 1
+    return 1
   fi
   echo "$(date) [Attempt ${attempt}] Waiting for ${JOB_STARTED_FILE}..."
   sleep "${RETRY_INTERVAL}"
@@ -76,17 +76,23 @@ wait_for_file() {
 
 # 2. Get hostname
 if ! wait_for_file "${HOSTNAME_FILE}" "HOSTNAME"; then
-  exit 1
+  return 1
 fi
 HOSTNAME=$(cat "${HOSTNAME_FILE}")
-echo "HOSTNAME=${HOSTNAME}" | tee -a $OUTPUTS
+echo "HOSTNAME=${HOSTNAME}"
+if [ -n "${OUTPUTS:-}" ]; then
+  echo "HOSTNAME=${HOSTNAME}" >> "${OUTPUTS}"
+fi
 
 # 3. Get session port
 if ! wait_for_file "${SESSION_PORT_FILE}" "SESSION_PORT"; then
-  exit 1
+  return 1
 fi
 SESSION_PORT=$(cat "${SESSION_PORT_FILE}")
-echo "SESSION_PORT=${SESSION_PORT}" | tee -a $OUTPUTS
+echo "SESSION_PORT=${SESSION_PORT}"
+if [ -n "${OUTPUTS:-}" ]; then
+  echo "SESSION_PORT=${SESSION_PORT}" >> "${OUTPUTS}"
+fi
 
 # 4. Wait for service to respond
 echo "Waiting for service to respond on ${HOSTNAME}:${SESSION_PORT}..."
@@ -96,12 +102,12 @@ while true; do
 
   if curl --silent --connect-timeout "${TIMEOUT}" "http://${HOSTNAME}:${SESSION_PORT}" >/dev/null 2>&1; then
     echo "$(date) SUCCESS: Service is responding!"
-    exit 0
+    return 0
   fi
 
   if [ -f "${JOB_ENDED_FILE}" ]; then
     echo "$(date) ERROR: Job ended before service was ready" >&2
-    exit 1
+    return 1
   fi
 
   echo "$(date) Service not responding. Retrying in ${RETRY_INTERVAL} seconds..."
