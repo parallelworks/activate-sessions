@@ -41,19 +41,40 @@ while [ ! -f "${JOB_STARTED_FILE}" ]; do
 done
 echo "$(date) Job started detected"
 
-# 2. Get hostname
+# Allow NFS cache to sync (files are written before job.started but may not be visible yet)
+sleep 2
+# Force NFS cache refresh by listing directory
+ls -la "${PW_PARENT_JOB_DIR}/" >/dev/null 2>&1 || true
+
+# 2. Get hostname (with retry for NFS caching)
 echo "Reading hostname from ${HOSTNAME_FILE}..."
+for i in 1 2 3; do
+  if [ -f "${HOSTNAME_FILE}" ]; then
+    break
+  fi
+  echo "$(date) Waiting for HOSTNAME file (attempt $i)..."
+  sleep 1
+done
 if [ ! -f "${HOSTNAME_FILE}" ]; then
   echo "$(date) ERROR: HOSTNAME file not found" >&2
+  ls -la "${PW_PARENT_JOB_DIR}/" >&2
   exit 1
 fi
 HOSTNAME=$(cat "${HOSTNAME_FILE}")
 echo "HOSTNAME=${HOSTNAME}" | tee -a $OUTPUTS
 
-# 3. Get session port
+# 3. Get session port (with retry for NFS caching)
 echo "Reading session port from ${SESSION_PORT_FILE}..."
+for i in 1 2 3; do
+  if [ -f "${SESSION_PORT_FILE}" ]; then
+    break
+  fi
+  echo "$(date) Waiting for SESSION_PORT file (attempt $i)..."
+  sleep 1
+done
 if [ ! -f "${SESSION_PORT_FILE}" ]; then
   echo "$(date) ERROR: SESSION_PORT file not found" >&2
+  ls -la "${PW_PARENT_JOB_DIR}/" >&2
   exit 1
 fi
 SESSION_PORT=$(cat "${SESSION_PORT_FILE}")
