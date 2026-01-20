@@ -1,8 +1,11 @@
 #!/bin/bash
 # start.sh - Hello World Service Startup Script (runs on compute node)
 #
-# This script runs on the compute node (via scheduler or directly on controller).
-# It uses resources prepared by setup.sh which runs earlier on the controller.
+# This script runs on the compute node in STEP 2 of the session_runner job.
+# It is submitted via marketplace/job_runner/v4.0 (SLURM/PBS) or runs directly
+# on the controller if no scheduler is configured.
+#
+# It uses resources prepared by setup.sh which runs in STEP 1 on the controller.
 #
 # Environment variables:
 #   hello_message - Custom greeting message (default: "Hello World from ACTIVATE!")

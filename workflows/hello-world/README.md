@@ -13,51 +13,53 @@ This is the **template workflow** for creating new interactive sessions. It demo
 
 | Script | Runs On | When | Purpose |
 |--------|---------|------|---------|
-| `setup.sh` | Controller/login node | preprocessing job | Download dependencies, install containers, prepare shared resources |
-| `start.sh` | Compute node (or controller if no scheduler) | session_runner job | Start the service, write coordination files, keep session alive |
+| `setup.sh` | Controller/login node | session_runner, step 1 | Download dependencies, install containers, prepare shared resources |
+| `start.sh` | Compute node (or controller if no scheduler) | session_runner, step 2 (via job_runner) | Start the service, write coordination files, keep session alive |
 
 **Why separate them?**
 - Controller nodes typically have internet access; compute nodes often don't
-- Downloads should happen once (controller) not per-job (compute)
+- Downloads should happen once (controller) before submitting to compute
 - Shared resources (containers, software installs) persist across jobs
 
 ## Workflow Execution Flow
 
 ```
-preprocessing (controller)
+preprocessing
 ├── Checkout scripts from git
-├── Run setup.sh → downloads, installs, prepares
 └── Transfer user inputs
 
-session_runner (compute node)
-└── Execute start.sh → starts service
+session_runner (runs sequentially on controller)
+├── Step 1: Run setup.sh (on controller) → downloads, installs, prepares
+└── Step 2: Submit start.sh (to compute node via scheduler) → starts service
 
-wait_for_service (controller)
+wait_for_service
 └── Wait for job.started, HOSTNAME, SESSION_PORT
 
-update_session (controller)
+update_session
 └── Configure session proxy
 
-complete (controller)
+complete
 └── Display connection info
 ```
+
+**Key point**: `setup.sh` runs in step 1 of `session_runner` on the controller. `start.sh` is submitted to the compute node in step 2 via `marketplace/job_runner/v4.0`.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | [workflow.yaml](workflow.yaml) | Main workflow definition |
-| [setup.sh](setup.sh) | Controller setup script (runs once in preprocessing) |
-| [start.sh](start.sh) | Compute node startup script (runs in session_runner) |
+| [setup.sh](setup.sh) | Controller setup script (runs first in session_runner) |
+| [start.sh](start.sh) | Compute node startup script (submitted via job_runner) |
 
 ## How It Works
 
-**setup.sh** (runs on controller):
+**setup.sh** (runs on controller, step 1 of session_runner):
 - Verifies Python is available
 - Creates shared logs directory
 - Writes `SETUP_COMPLETE` marker
 
-**start.sh** (runs on compute node):
+**start.sh** (runs on compute node, step 2 of session_runner):
 - Verifies setup completed successfully
 - Allocates an available port
 - Writes coordination files (`HOSTNAME`, `SESSION_PORT`, `job.started`)
@@ -79,7 +81,7 @@ Then edit:
 
 ### What Goes in setup.sh vs start.sh?
 
-**setup.sh** (controller):
+**setup.sh** (controller, step 1):
 ```bash
 # Download software from GitHub
 curl -L https://github.com/example/tool/archive/refs/tags/v1.0.tar.gz | tar -xz
@@ -91,7 +93,7 @@ git lfs pull --include="my-container/*"
 pip install --user some-package
 ```
 
-**start.sh** (compute node):
+**start.sh** (compute node, step 2):
 ```bash
 # Use resources prepared by setup.sh
 source ~/.local/bin/activate
@@ -103,4 +105,4 @@ echo $PORT > SESSION_PORT
 touch job.started
 ```
 
-See [DEVELOPER_GUIDE.md](../../../DEVELOPER_GUIDE.md) for details.
+See [DEVELOPER_GUIDE.md](../../docs/DEVELOPER_GUIDE.md) for details.
