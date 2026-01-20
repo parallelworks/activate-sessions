@@ -192,8 +192,8 @@ if [ -z "${service_vnc_type}" ]; then
         echo "vnc/*" > .git/info/sparse-checkout
         git lfs install
         git pull origin main
-        # Explicitly fetch LFS files (git pull doesn't always do this in sparse checkout)
-        git lfs pull
+        # Explicitly fetch LFS files - only pull vnc directory
+        git lfs pull --include="vnc/*"
 
         # Join SIF parts if split, otherwise just copy
         mkdir -p "${CONTAINER_DIR}"

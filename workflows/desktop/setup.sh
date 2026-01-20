@@ -92,19 +92,19 @@ if [ ! -f "${CONTAINER_DIR}/nginx.sif" ] || [ ! -s "${CONTAINER_DIR}/nginx.sif" 
     echo "nginx/*" > .git/info/sparse-checkout
     git lfs install
     git pull origin main
-    # Explicitly fetch LFS files (git pull doesn't always do this in sparse checkout)
-    git lfs pull
+    # Explicitly fetch LFS files - only pull nginx directory
+    git lfs pull --include="nginx/*"
 
     # Join SIF parts if split, otherwise just copy
     mkdir -p "${CONTAINER_DIR}"
 
     # Check if there are split parts (nginx.sif.00, nginx.sif.01, etc.)
-    if compgen -G "nginx/nginx-unprivileged.sif.*" > /dev/null 2>&1; then
+    if compgen -G "nginx/nginx.sif.*" > /dev/null 2>&1; then
         echo "Joining SIF parts..."
-        cat nginx/nginx-unprivileged.sif.* > "${CONTAINER_DIR}/nginx.sif"
-    elif [ -f "nginx/nginx-unprivileged.sif" ]; then
+        cat nginx/nginx.sif.* > "${CONTAINER_DIR}/nginx.sif"
+    elif [ -f "nginx/nginx.sif" ]; then
         echo "Copying nginx container..."
-        cp nginx/nginx-unprivileged.sif "${CONTAINER_DIR}/nginx.sif"
+        cp nginx/nginx.sif "${CONTAINER_DIR}/nginx.sif"
     else
         echo "WARNING: nginx container not found after pull" >&2
     fi
