@@ -50,35 +50,39 @@ sleep 2
 # Force NFS cache refresh by listing directory
 ls -la "${JOB_DIR}/" >/dev/null 2>&1 || true
 
-# 2. Get hostname (with retry for NFS caching)
-echo "Reading hostname from ${HOSTNAME_FILE}..."
-for i in 1 2 3; do
-  if [ -f "${HOSTNAME_FILE}" ]; then
-    break
-  fi
-  echo "$(date) Waiting for HOSTNAME file (attempt $i)..."
-  sleep 1
-done
-if [ ! -f "${HOSTNAME_FILE}" ]; then
-  echo "$(date) ERROR: HOSTNAME file not found" >&2
+# Helper function to wait for a file with cache busting
+wait_for_file() {
+  local file_path="$1"
+  local file_name="$2"
+  local max_attempts=10
+
+  echo "Reading ${file_name} from ${file_path}..."
+  for i in $(seq 1 ${max_attempts}); do
+    # Force filesystem cache refresh before each check
+    ls -la "${JOB_DIR}/" >/dev/null 2>&1 || true
+    stat "${file_path}" >/dev/null 2>&1 || true
+
+    if [ -f "${file_path}" ] && [ -s "${file_path}" ]; then
+      return 0
+    fi
+    echo "$(date) Waiting for ${file_name} file (attempt $i/${max_attempts})..."
+    sleep 2
+  done
+
+  echo "$(date) ERROR: ${file_name} file not found" >&2
   ls -la "${JOB_DIR}/" >&2
+  return 1
+}
+
+# 2. Get hostname
+if ! wait_for_file "${HOSTNAME_FILE}" "HOSTNAME"; then
   exit 1
 fi
 HOSTNAME=$(cat "${HOSTNAME_FILE}")
 echo "HOSTNAME=${HOSTNAME}" | tee -a $OUTPUTS
 
-# 3. Get session port (with retry for NFS caching)
-echo "Reading session port from ${SESSION_PORT_FILE}..."
-for i in 1 2 3; do
-  if [ -f "${SESSION_PORT_FILE}" ]; then
-    break
-  fi
-  echo "$(date) Waiting for SESSION_PORT file (attempt $i)..."
-  sleep 1
-done
-if [ ! -f "${SESSION_PORT_FILE}" ]; then
-  echo "$(date) ERROR: SESSION_PORT file not found" >&2
-  ls -la "${JOB_DIR}/" >&2
+# 3. Get session port
+if ! wait_for_file "${SESSION_PORT_FILE}" "SESSION_PORT"; then
   exit 1
 fi
 SESSION_PORT=$(cat "${SESSION_PORT_FILE}")
