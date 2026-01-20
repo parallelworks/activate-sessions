@@ -164,40 +164,36 @@ if [ -z "${service_vnc_type}" ]; then
         fi
       fi
 
-      # Initialize/pull containers repo
-      if [ ! -d "${CONTAINER_DIR}/.git" ]; then
-        GIT_LFS_SKIP_SMUDGE=1 git clone \
-          https://github.com/parallelworks/singularity-containers.git "${CONTAINER_DIR}"
-        cd "${CONTAINER_DIR}"
-        git lfs install
-      fi
+      # Sparse checkout vnc container
+      if [ ! -f "${CONTAINER_DIR}/vnc/vncserver.sif" ]; then
+        echo "Fetching vncserver container via sparse checkout (~1.2GB)..."
+        mkdir -p "${CONTAINER_DIR}"
 
-      cd "${CONTAINER_DIR}"
-      if [ ! -f "vnc/vncserver.sif" ]; then
-        echo "Pulling vncserver container via Git LFS (~1.2GB)..."
-        git lfs pull --include="vnc/*"
-      fi
+        # Remove existing directory if it's not a proper git repo
+        if [ -d "${CONTAINER_DIR}" ] && [ ! -d "${CONTAINER_DIR}/.git" ]; then
+          rm -rf "${CONTAINER_DIR}"
+          mkdir -p "${CONTAINER_DIR}"
+        fi
 
-      # Extract container if needed
-      if [ -f "vnc/vncserver.sif" ] && [ ! -d "${SERVICE_VNCSERVER_SINGULARITY_DIR}" ]; then
-        mkdir -p "${SERVICE_VNCSERVER_SINGULARITY_DIR}"
-        # Extract the sif to a directory structure
-        if [ -f "vnc/vncserver.tgz" ]; then
-          tar -xzf "vnc/vncserver.tgz" -C "$(dirname ${SERVICE_VNCSERVER_SINGULARITY_DIR})"
-        else
-          # Use sif directly
-          SERVICE_VNCSERVER_SINGULARITY_DIR="vnc/vncserver.sif"
+        # Sparse checkout just the vnc container
+        if [ ! -d "${CONTAINER_DIR}/.git" ]; then
+          cd "${CONTAINER_DIR}"
+          git init
+          git remote add origin https://github.com/parallelworks/singularity-containers.git
+          git config core.sparseCheckout true
+          echo "vnc/*" > .git/info/sparse-checkout
+          git lfs install
+          git pull origin main
         fi
       fi
 
-      if [ -f "${SERVICE_VNCSERVER_SINGULARITY_DIR}/vncserver" ] || [ -f "${SERVICE_VNCSERVER_SINGULARITY_DIR}" ]; then
+      # Use the sif directly
+      SERVICE_VNCSERVER_SINGULARITY_DIR="${CONTAINER_DIR}/vnc/vncserver.sif"
+
+      if [ -f "${SERVICE_VNCSERVER_SINGULARITY_DIR}" ]; then
         echo "Using singularity container..."
         export service_vnc_type="SingularityTurboVNC"
-        if [ -d "${SERVICE_VNCSERVER_SINGULARITY_DIR}" ]; then
-          service_vnc_exec="singularity exec --writable-tmpfs --bind /tmp/.X11-unix:/tmp/.X11-unix --bind ${HOME}:${HOME} ${SERVICE_VNCSERVER_SINGULARITY_DIR} vncserver"
-        else
-          service_vnc_exec="singularity exec --writable-tmpfs --bind /tmp/.X11-unix:/tmp/.X11-unix --bind ${HOME}:${HOME} ${SERVICE_VNCSERVER_SINGULARITY_DIR}"
-        fi
+        service_vnc_exec="singularity exec --writable-tmpfs --bind /tmp/.X11-unix:/tmp/.X11-unix --bind ${HOME}:${HOME} ${SERVICE_VNCSERVER_SINGULARITY_DIR}"
       else
         echo "ERROR: No vncserver command found and Singularity container download failed" >&2
         exit 1

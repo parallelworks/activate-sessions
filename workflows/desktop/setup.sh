@@ -69,28 +69,30 @@ else
 fi
 
 # =============================================================================
-# Pull nginx container via Git LFS
+# Pull nginx container via sparse checkout + Git LFS
 # =============================================================================
-# Initialize singularity-containers repo if not already present
-if [ ! -d "${CONTAINER_DIR}/.git" ]; then
-    echo "Cloning singularity-containers repo..."
-    GIT_LFS_SKIP_SMUDGE=1 git clone \
-        https://github.com/parallelworks/singularity-containers.git "${CONTAINER_DIR}"
-    cd "${CONTAINER_DIR}"
-    git lfs install
-    echo "Singularity containers repo initialized"
-else
-    echo "Singularity containers repo already exists"
-fi
+if [ ! -f "${CONTAINER_DIR}/nginx/nginx-unprivileged.sif" ]; then
+    echo "Fetching nginx container via sparse checkout..."
+    mkdir -p "${CONTAINER_DIR}"
 
-cd "${CONTAINER_DIR}"
+    # Remove existing directory if it's not a proper git repo
+    if [ -d "${CONTAINER_DIR}" ] && [ ! -d "${CONTAINER_DIR}/.git" ]; then
+        rm -rf "${CONTAINER_DIR}"
+        mkdir -p "${CONTAINER_DIR}"
+    fi
 
-# Pull nginx container (needed for KasmVNC)
-if [ ! -f "nginx/nginx-unprivileged.sif" ]; then
-    echo "Pulling nginx container via Git LFS..."
-    git lfs pull --include="nginx/*"
+    # Sparse checkout just the nginx container
+    if [ ! -d "${CONTAINER_DIR}/.git" ]; then
+        cd "${CONTAINER_DIR}"
+        git init
+        git remote add origin https://github.com/parallelworks/singularity-containers.git
+        git config core.sparseCheckout true
+        echo "nginx/*" > .git/info/sparse-checkout
+        git lfs install
+        git pull origin main
+    fi
 else
-    echo "nginx container already present"
+    echo "nginx container already present at ${CONTAINER_DIR}/nginx/"
 fi
 
 # Note: vncserver container is downloaded in start.sh only if needed (fallback)

@@ -9,7 +9,7 @@ permissions:
 sessions:
   session:
     useTLS: false
-    redirect: true # Desktop uses redirect with custom slug for autoconnect
+    redirect: false # Desktop uses redirect with custom slug for autoconnect
 
 jobs:
   # =============================================================================
