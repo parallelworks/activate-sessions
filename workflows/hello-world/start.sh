@@ -20,20 +20,33 @@ set -e
 
 [[ "${DEBUG:-}" == "true" ]] && set -x
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Normalize job directory path (remove trailing slash if present)
+JOB_DIR="${PW_PARENT_JOB_DIR%/}"
+
+echo "=========================================="
+echo "Hello World Service Starting (Compute Node)"
+echo "=========================================="
+echo "Script directory: ${SCRIPT_DIR}"
+echo "Job directory: ${JOB_DIR}"
+echo "Working directory: $(pwd)"
+
+# Ensure we're working from the job directory for coordination files
+cd "${JOB_DIR}"
+
 # Source inputs if available
 if [ -f inputs.sh ]; then
   source inputs.sh
 fi
 
-echo "=========================================="
-echo "Hello World Service Starting (Compute Node)"
-echo "=========================================="
-
 # Verify setup completed successfully (optional sanity check)
-if [ -f SETUP_COMPLETE ]; then
+# SETUP_COMPLETE is created by setup.sh in the job directory
+if [ -f "${JOB_DIR}/SETUP_COMPLETE" ]; then
   echo "Setup phase completed successfully"
 else
-  echo "Warning: SETUP_COMPLETE marker not found"
+  echo "Warning: SETUP_COMPLETE marker not found in ${JOB_DIR}"
 fi
 
 # =============================================================================
