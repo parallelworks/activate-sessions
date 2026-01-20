@@ -25,25 +25,14 @@ For platform usage details, see:
 ```
 activate-sessions/
 ├── workflows/
-│   ├── hello-world/           # Template workflow (start here)
-│   │   ├── workflow.yaml      # Workflow definition
-│   │   ├── setup.sh           # Controller setup script
-│   │   ├── start.sh           # Compute node service script
-│   │   ├── README.md          # Workflow documentation
-│   │   └── thumbnail.png      # Workflow icon
-│   └── desktop/               # Remote desktop workflow (VNC)
-│       ├── workflow.yaml
-│       ├── setup.sh
-│       ├── start.sh
-│       └── README.md
+│   └── hello-world/           # Template workflow (start here)
+│       ├── workflow.yaml      # Workflow definition
+│       ├── setup.sh           # Controller setup script
+│       ├── start.sh           # Compute node service script
+│       └── README.md          # Workflow documentation
 ├── utils/
 │   └── wait_service.sh        # Shared coordination script
 ├── tests/                     # Pytest validation tests
-│   ├── test_workflow_yaml.py  # YAML structure validation
-│   ├── test_start_script.py   # Script validation
-│   └── README.md              # Test documentation
-├── docs/
-│   └── MIGRATION_PLAN.md      # Migration reference docs
 ├── README.md                  # This file
 └── DEVELOPER_GUIDE.md         # Detailed development guide
 ```

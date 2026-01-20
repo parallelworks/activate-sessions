@@ -2,13 +2,6 @@
 
 Interactive session workflow templates for the Parallel Works ACTIVATE platform.
 
-## Available Workflows
-
-| Workflow | Description |
-|----------|-------------|
-| [hello-world](hello-world/) | Template workflow - start here for new services |
-| [desktop](desktop/) | Remote desktop via VNC (TigerVNC, TurboVNC, KasmVNC) |
-
 ## Creating a New Workflow
 
 1. **Copy the template**
@@ -27,18 +20,15 @@ Each workflow follows this structure:
 
 ```
 workflows/
-├── hello-world/              # Template workflow
-│   ├── workflow.yaml         # Workflow definition
-│   ├── setup.sh              # Controller setup script
-│   ├── start.sh              # Compute node service script
-│   ├── README.md             # Workflow documentation
-│   └── thumbnail.png         # Workflow icon (optional)
-└── desktop/                  # Remote desktop workflow
-    ├── workflow.yaml
-    ├── setup.sh
-    ├── start.sh
-    └── README.md
+└── my-service/
+    ├── workflow.yaml         # Workflow definition
+    ├── setup.sh              # Controller setup script
+    ├── start.sh              # Compute node service script
+    ├── README.md             # Workflow documentation
+    └── thumbnail.png         # Workflow icon (optional)
 ```
+
+See [hello-world](hello-world/) for a complete working example.
 
 ## The Two-Script Pattern
 
