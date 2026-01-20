@@ -71,29 +71,42 @@ fi
 # =============================================================================
 # Pull nginx container via sparse checkout + Git LFS
 # =============================================================================
-if [ ! -f "${CONTAINER_DIR}/nginx/nginx-unprivileged.sif" ]; then
+if [ ! -f "${CONTAINER_DIR}/nginx.sif" ]; then
     echo "Fetching nginx container via sparse checkout..."
+
+    # Pull to tmp location first
+    TMP_CONTAINER_DIR="$(mktemp -d)/singularity-containers"
+    mkdir -p "${TMP_CONTAINER_DIR}"
+
+    cd "${TMP_CONTAINER_DIR}"
+    git init
+    git remote add origin https://github.com/parallelworks/singularity-containers.git
+    git config core.sparseCheckout true
+    echo "nginx/*" > .git/info/sparse-checkout
+    git lfs install
+    git pull origin main
+
+    # Join SIF parts if split, otherwise just copy
     mkdir -p "${CONTAINER_DIR}"
 
-    # Remove existing directory if it's not a proper git repo
-    if [ -d "${CONTAINER_DIR}" ] && [ ! -d "${CONTAINER_DIR}/.git" ]; then
-        rm -rf "${CONTAINER_DIR}"
-        mkdir -p "${CONTAINER_DIR}"
+    # Check if there are split parts (nginx.sif.00, nginx.sif.01, etc.)
+    if ls nginx/nginx-unprivileged.sif.* 2>/dev/null | head -1; then
+        echo "Joining SIF parts..."
+        cat nginx/nginx-unprivileged.sif.* > "${CONTAINER_DIR}/nginx.sif"
+    elif [ -f "nginx/nginx-unprivileged.sif" ]; then
+        cp nginx/nginx-unprivileged.sif "${CONTAINER_DIR}/nginx.sif"
     fi
 
-    # Sparse checkout just the nginx container
-    if [ ! -d "${CONTAINER_DIR}/.git" ]; then
-        cd "${CONTAINER_DIR}"
-        git init
-        git remote add origin https://github.com/parallelworks/singularity-containers.git
-        git config core.sparseCheckout true
-        echo "nginx/*" > .git/info/sparse-checkout
-        git lfs install
-        git pull origin main
-    fi
+    cd - >/dev/null
+    rm -rf "${TMP_CONTAINER_DIR}"
+
+    echo "nginx container cached at ${CONTAINER_DIR}/nginx.sif"
 else
-    echo "nginx container already present at ${CONTAINER_DIR}/nginx/"
+    echo "nginx container already present at ${CONTAINER_DIR}/nginx.sif"
 fi
+
+# Ensure we're back in the workflow directory
+cd "${PW_PARENT_JOB_DIR}/workflows/desktop" 2>/dev/null || true
 
 # Note: vncserver container is downloaded in start.sh only if needed (fallback)
 
@@ -129,6 +142,6 @@ echo "Setup complete!"
 echo "=========================================="
 echo "Shared resources prepared:"
 echo "  - noVNC: ${NOVNC_INSTALL_DIR}"
-echo "  - nginx container: ${CONTAINER_DIR}/nginx/nginx-unprivileged.sif"
+echo "  - nginx container: ${CONTAINER_DIR}/nginx.sif"
 echo "  - Git LFS: $(git lfs version)"
 echo "=========================================="

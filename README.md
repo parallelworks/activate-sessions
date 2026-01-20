@@ -1,6 +1,6 @@
 # ACTIVATE Sessions
 
-ACTIVATE interactive session workflow templates for Parallel Works. Each workflow launches a service (Jupyter, desktop, web app, etc.), waits for it to be ready, and exposes it through the platform session proxy.
+Interactive session workflow templates for the Parallel Works ACTIVATE platform. Each workflow launches a service (Jupyter, desktop, web app, etc.), waits for it to be ready, and exposes it through the platform session proxy.
 
 ## Quick Start
 
@@ -9,9 +9,10 @@ ACTIVATE interactive session workflow templates for Parallel Works. Each workflo
    cp -r workflows/hello-world workflows/my-service
    ```
 
-2. **Edit the workflow**
-   - `workflows/my-service/workflow.yaml` - Main workflow definition
-   - `workflows/my-service/start.sh` - Your service startup script
+2. **Edit the workflow files**
+   - `workflow.yaml` - Workflow definition (inputs, jobs, session config)
+   - `setup.sh` - Controller setup script (downloads, dependencies)
+   - `start.sh` - Service startup script (runs on compute node)
 
 3. **Run through the ACTIVATE platform**
 
@@ -24,46 +25,72 @@ For platform usage details, see:
 ```
 activate-sessions/
 ├── workflows/
-│   └── hello-world/          # Example workflow (template)
-│       ├── workflow.yaml      # Workflow definition
-│       ├── start.sh           # Service startup script
-│       ├── README.md          # Workflow docs
-│       └── thumbnail.png      # Workflow icon
+│   ├── hello-world/           # Template workflow (start here)
+│   │   ├── workflow.yaml      # Workflow definition
+│   │   ├── setup.sh           # Controller setup script
+│   │   ├── start.sh           # Compute node service script
+│   │   ├── README.md          # Workflow documentation
+│   │   └── thumbnail.png      # Workflow icon
+│   └── desktop/               # Remote desktop workflow (VNC)
+│       ├── workflow.yaml
+│       ├── setup.sh
+│       ├── start.sh
+│       └── README.md
 ├── utils/
-│   └── wait_service.sh        # Shared wait coordination script
-├── tests/                     # Pytest tests
-│   ├── test_workflow_yaml.py  # YAML validation
+│   └── wait_service.sh        # Shared coordination script
+├── tests/                     # Pytest validation tests
+│   ├── test_workflow_yaml.py  # YAML structure validation
 │   ├── test_start_script.py   # Script validation
 │   └── README.md              # Test documentation
-├── .gitignore
-├── LICENSE
+├── docs/
+│   └── MIGRATION_PLAN.md      # Migration reference docs
 ├── README.md                  # This file
-└── DEVELOPER_GUIDE.md         # Detailed guide
+└── DEVELOPER_GUIDE.md         # Detailed development guide
 ```
 
 ## How It Works
 
-The session workflow pattern uses marketplace utilities:
+### The Two-Script Pattern
 
-1. **preprocessing** - Checkout service scripts from repo
-2. **session_runner** - Uses `marketplace/job_runner/v4.0` to submit SLURM/PBS/SSH job
-3. **wait_for_service** - Waits for service to be ready
+Workflows use two scripts that run at different stages:
+
+| Script | Runs On | Purpose |
+|--------|---------|---------|
+| `setup.sh` | Controller/login node | Download dependencies, pull containers, prepare shared resources |
+| `start.sh` | Compute node | Start the service, write coordination files, keep session alive |
+
+**Why two scripts?** Controller nodes typically have internet access while compute nodes often don't. Downloads happen once on the controller before the job is submitted.
+
+### Workflow Jobs
+
+Each workflow follows this 5-job pattern:
+
+1. **preprocessing** - Checkout scripts from git to the remote host
+2. **session_runner** - Step 1: runs `setup.sh`, Step 2: submits `start.sh` via job_runner
+3. **wait_for_service** - Waits for service to be ready (checks for coordination files)
 4. **update_session** - Configures the session proxy
 5. **complete** - Displays connection URLs
 
-Your `start.sh` script only needs to:
-1. Allocate a port
-2. Start your service
-3. Write `HOSTNAME` and `SESSION_PORT` files
-4. Create a `job.started` file
+### Coordination Files
 
-See [hello-world/start.sh](workflows/hello-world/start.sh) for a minimal example.
+Your `start.sh` script creates these files:
+- `HOSTNAME` - The hostname where the service is running
+- `SESSION_PORT` - The port the service is listening on
+- `job.started` - Signals that the service is ready
+
+See [hello-world](workflows/hello-world/) for a complete working example.
 
 ## Running Tests
 
 ```bash
 pytest -v
 ```
+
+## Documentation
+
+- [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) - Detailed guide for creating workflows
+- [workflows/README.md](workflows/README.md) - Workflow directory overview
+- [tests/README.md](tests/README.md) - Test documentation
 
 ## License
 

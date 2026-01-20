@@ -106,14 +106,14 @@ Resources are cached in shared locations:
 
 ```
 ~/pw/software/
-├── noVNC-v1.6.0/              # Downloaded from GitHub
-├── nginx-unprivileged.sif      # Git LFS from singularity-containers
-└── vncserver_singularity/      # Git LFS, downloaded only if needed
+└── noVNC-v1.6.0/              # Downloaded from GitHub
 
-~/singularity-containers/       # Git LFS repo
-├── vnc/vncserver.sif           # Downloaded only as fallback
-└── nginx/nginx-unprivileged.sif # Downloaded for KasmVNC
+~/pw/singularity/
+├── nginx.sif                   # Git LFS sparse checkout (for KasmVNC)
+└── vncserver.sif               # Git LFS sparse checkout (fallback only)
 ```
+
+The vncserver container (~1.2GB) is only downloaded if no VNC server is installed on the system.
 
 ## Connection URL Format
 
@@ -131,7 +131,7 @@ This format is preserved from the legacy workflow for backward compatibility.
 |-------|------|---------|-------------|
 | `resource` | compute-clusters | auto-select | Service host cluster |
 | `desktop.environment` | dropdown | auto | Desktop environment (auto/gnome/xfce/mate/cinnamon/kde/lxde) |
-| `desktop.resolution` | dropdown | 1280x1024 | Screen resolution (note: resolution changes may require VNC restart) |
+| `desktop.resolution` | dropdown | 1920x1080 | Screen resolution (1280x1024, 1920x1080, 2560x1440) |
 
 ## Migration Notes
 

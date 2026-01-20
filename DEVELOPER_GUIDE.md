@@ -53,7 +53,7 @@ Your setup script runs on the controller before the compute job is submitted. Us
    touch SETUP_COMPLETE
    ```
 
-See the full [hello-world/setup.sh](../workflows/hello-world/setup.sh) example.
+See the full [hello-world/setup.sh](workflows/hello-world/setup.sh) example.
 
 #### start.sh (Compute Node, step 2)
 
@@ -84,7 +84,7 @@ Your service script runs on the compute node (via SLURM/PBS) or directly on the 
    exec python -m http.server $SESSION_PORT > logs/server.log 2>&1
    ```
 
-See the full [hello-world/start.sh](../workflows/hello-world/start.sh) example.
+See the full [hello-world/start.sh](workflows/hello-world/start.sh) example.
 
 ### Step 3: Edit the Workflow (`workflow.yaml`)
 
@@ -310,12 +310,15 @@ done
 ## Testing
 
 ```bash
-# Unit tests
-python3 -m pytest tests/unit
+# Run all tests
+pytest -v
 
-# Integration tests (requires .env with credentials)
-python3 -m pytest tests/integration -m integration
+# Run specific test file
+pytest tests/test_workflow_yaml.py
+pytest tests/test_start_script.py
 ```
+
+See [tests/README.md](tests/README.md) for details on test coverage and adding tests for new workflows.
 
 ## Platform Documentation
 

@@ -1,5 +1,7 @@
 # VNC Server Workflow Migration Plan
 
+> **Note:** This is internal migration documentation for reference. The migrated workflow is located at `workflows/desktop/`.
+
 ## Overview
 
 Migrating the VNC server workflow from the legacy `interactive_session` repository to the new `activate-sessions` repository format. This establishes the pattern for migrating subsequent workflows.
@@ -9,10 +11,9 @@ Migrating the VNC server workflow from the legacy `interactive_session` reposito
 - Scripts: `~/interactive_session/vncserver/`
 
 **Target:**
-- `workflows/vncserver/workflow.yaml`
-- `workflows/vncserver/setup.sh` - Controller setup (downloads, containers)
-- `workflows/vncserver/start.sh` - Compute node service startup
-- Supporting scripts in `workflows/vncserver/`
+- `workflows/desktop/workflow.yaml`
+- `workflows/desktop/setup.sh` - Controller setup (downloads, containers)
+- `workflows/desktop/start.sh` - Compute node service startup
 
 ---
 
@@ -35,7 +36,7 @@ Migrating the VNC server workflow from the legacy `interactive_session` reposito
 ### Step 1: Create New Workflow Directory
 
 ```bash
-mkdir -p /home/mattshax/activate-sessions/workflows/vncserver
+mkdir -p /home/mattshax/activate-sessions/workflows/desktop
 ```
 
 ### Step 2: Create Simplified `workflow.yaml`
@@ -71,12 +72,12 @@ The legacy has 3 scripts that map to 2 new scripts:
 
 New structure:
 ```
-workflows/vncserver/
+workflows/desktop/
 ├── workflow.yaml          # Main workflow definition
 ├── setup.sh               # Controller: downloads, containers, Git LFS
 ├── start.sh               # Compute: VNC server, noVNC proxy, desktop
 ├── README.md              # Workflow documentation
-└── thumbnail.png          # VNC icon
+└── thumbnail.png          # Desktop icon (optional)
 ```
 
 ### Step 4: Define Input Schema

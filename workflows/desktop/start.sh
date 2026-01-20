@@ -42,11 +42,14 @@ else
 fi
 
 # =============================================================================
-# Configuration
+# Configuration - must match paths in setup.sh
 # =============================================================================
 SERVICE_PARENT_INSTALL_DIR="${HOME}/pw/software"
-SERVICE_NGINX_SIF="${SERVICE_PARENT_INSTALL_DIR}/nginx-unprivileged.sif"
-SERVICE_VNCSERVER_SINGULARITY_DIR="${SERVICE_PARENT_INSTALL_DIR}/vncserver_singularity"
+CONTAINER_DIR="${HOME}/pw/singularity"
+
+# Container paths (downloaded by setup.sh)
+SERVICE_NGINX_SIF="${CONTAINER_DIR}/nginx.sif"
+SERVICE_VNCSERVER_SIF="${CONTAINER_DIR}/vncserver.sif"
 
 NOVNC_VERSION="v1.6.0"
 NOVNC_INSTALL_DIR="${SERVICE_PARENT_INSTALL_DIR}/noVNC-${NOVNC_VERSION}"
@@ -144,10 +147,10 @@ fi
 # Fallback to Singularity container
 if [ -z "${service_vnc_type}" ]; then
   if which singularity >/dev/null 2>&1; then
-    if [ -f "${SERVICE_VNCSERVER_SINGULARITY_DIR}/vncserver" ]; then
-      echo "vncserver not installed. Using singularity container..."
+    if [ -f "${SERVICE_VNCSERVER_SIF}" ]; then
+      echo "vncserver not installed. Using singularity container from cache..."
       export service_vnc_type="SingularityTurboVNC"
-      service_vnc_exec="singularity exec --writable-tmpfs --bind /tmp/.X11-unix:/tmp/.X11-unix --bind ${HOME}:${HOME} ${SERVICE_VNCSERVER_SINGULARITY_DIR} vncserver"
+      service_vnc_exec="singularity exec --writable-tmpfs --bind /tmp/.X11-unix:/tmp/.X11-unix --bind ${HOME}:${HOME} ${SERVICE_VNCSERVER_SIF}"
     else
       # Try to download the vncserver container
       echo "vncserver not installed and container not found. Downloading..."
@@ -164,36 +167,44 @@ if [ -z "${service_vnc_type}" ]; then
         fi
       fi
 
-      # Sparse checkout vnc container
-      if [ ! -f "${CONTAINER_DIR}/vnc/vncserver.sif" ]; then
+      # Sparse checkout vnc container to tmp, then join and move to cache
+      if [ ! -f "${CONTAINER_DIR}/vncserver.sif" ]; then
         echo "Fetching vncserver container via sparse checkout (~1.2GB)..."
+
+        # Pull to tmp location first
+        TMP_CONTAINER_DIR="$(mktemp -d)/singularity-containers"
+        mkdir -p "${TMP_CONTAINER_DIR}"
+
+        cd "${TMP_CONTAINER_DIR}"
+        git init
+        git remote add origin https://github.com/parallelworks/singularity-containers.git
+        git config core.sparseCheckout true
+        echo "vnc/*" > .git/info/sparse-checkout
+        git lfs install
+        git pull origin main
+
+        # Join SIF parts if split, otherwise just copy
         mkdir -p "${CONTAINER_DIR}"
 
-        # Remove existing directory if it's not a proper git repo
-        if [ -d "${CONTAINER_DIR}" ] && [ ! -d "${CONTAINER_DIR}/.git" ]; then
-          rm -rf "${CONTAINER_DIR}"
-          mkdir -p "${CONTAINER_DIR}"
+        # Check if there are split parts (vncserver.sif.00, vncserver.sif.01, etc.)
+        if ls vnc/vncserver.sif.* 2>/dev/null | head -1; then
+          echo "Joining SIF parts..."
+          cat vnc/vncserver.sif.* > "${CONTAINER_DIR}/vncserver.sif"
+        elif [ -f "vnc/vncserver.sif" ]; then
+          cp vnc/vncserver.sif "${CONTAINER_DIR}/vncserver.sif"
         fi
 
-        # Sparse checkout just the vnc container
-        if [ ! -d "${CONTAINER_DIR}/.git" ]; then
-          cd "${CONTAINER_DIR}"
-          git init
-          git remote add origin https://github.com/parallelworks/singularity-containers.git
-          git config core.sparseCheckout true
-          echo "vnc/*" > .git/info/sparse-checkout
-          git lfs install
-          git pull origin main
-        fi
+        cd - >/dev/null
+        rm -rf "${TMP_CONTAINER_DIR}"
       fi
 
-      # Use the sif directly
-      SERVICE_VNCSERVER_SINGULARITY_DIR="${CONTAINER_DIR}/vnc/vncserver.sif"
+      # Use the sif directly from cache
+      SERVICE_VNCSERVER_SIF="${CONTAINER_DIR}/vncserver.sif"
 
-      if [ -f "${SERVICE_VNCSERVER_SINGULARITY_DIR}" ]; then
+      if [ -f "${SERVICE_VNCSERVER_SIF}" ]; then
         echo "Using singularity container..."
         export service_vnc_type="SingularityTurboVNC"
-        service_vnc_exec="singularity exec --writable-tmpfs --bind /tmp/.X11-unix:/tmp/.X11-unix --bind ${HOME}:${HOME} ${SERVICE_VNCSERVER_SINGULARITY_DIR}"
+        service_vnc_exec="singularity exec --writable-tmpfs --bind /tmp/.X11-unix:/tmp/.X11-unix --bind ${HOME}:${HOME} ${SERVICE_VNCSERVER_SIF}"
       else
         echo "ERROR: No vncserver command found and Singularity container download failed" >&2
         exit 1
@@ -396,7 +407,7 @@ EOF
   chmod +x ${PWD}/vncserver.sh
 
   # Start VNC in container
-  singularity exec --writable-tmpfs --bind /tmp/.X11-unix:/tmp/.X11-unix --bind ${HOME}:${HOME} ${SERVICE_VNCSERVER_SINGULARITY_DIR} bash ${PWD}/vncserver.sh &
+  singularity exec --writable-tmpfs --bind /tmp/.X11-unix:/tmp/.X11-unix --bind ${HOME}:${HOME} ${SERVICE_VNCSERVER_SIF} bash ${PWD}/vncserver.sh &
 
   # Start noVNC proxy
   cd ${NOVNC_INSTALL_DIR}

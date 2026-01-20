@@ -105,4 +105,4 @@ echo $PORT > SESSION_PORT
 touch job.started
 ```
 
-See [DEVELOPER_GUIDE.md](../../docs/DEVELOPER_GUIDE.md) for details.
+See [DEVELOPER_GUIDE.md](../../DEVELOPER_GUIDE.md) for detailed instructions.
