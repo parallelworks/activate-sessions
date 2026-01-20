@@ -129,8 +129,8 @@ password=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12)
 echo "Generated VNC password"
 echo "password=${password}" | tee -a $OUTPUTS
 
-# Build basepath
-basepath="/me/session/${PW_USER}/${PW_SESSION_NAME:-session}"
+# Build basepath - PW_SESSION_NAME is passed from workflow YAML (${{ sessions.session }})
+basepath="/me/session/${PW_USER}/${PW_SESSION_NAME}"
 
 # Build slug with embedded password (for autoconnect)
 if [ -z "${PW_PLATFORM_HOST}" ]; then
