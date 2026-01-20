@@ -131,14 +131,15 @@ fi
 slug="vnc.html?resize=remote&autoconnect=true&show_dot=true&path=websockify&password=${password}&host=${PW_PLATFORM_HOST}${basepath}/&dt=0"
 echo "slug=${slug}" | tee -a $OUTPUTS
 
-# Write password to file for start.sh to use
-echo "${password}" > VNC_PASSWORD
-chmod 600 VNC_PASSWORD
+# Write password and coordination files to job directory (not workflow directory)
+# start.sh and wait_service.sh expect these in $PW_PARENT_JOB_DIR
+echo "${password}" > "${PW_PARENT_JOB_DIR}/VNC_PASSWORD"
+chmod 600 "${PW_PARENT_JOB_DIR}/VNC_PASSWORD"
 
 # =============================================================================
-# Write setup complete marker
+# Write setup complete marker to job directory
 # =============================================================================
-touch SETUP_COMPLETE
+touch "${PW_PARENT_JOB_DIR}/SETUP_COMPLETE"
 
 echo "=========================================="
 echo "Setup complete!"

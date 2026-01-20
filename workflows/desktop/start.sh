@@ -23,13 +23,16 @@ echo "=========================================="
 # =============================================================================
 # Source inputs and verify setup
 # =============================================================================
+# Ensure we're working from the job directory
+cd "${PW_PARENT_JOB_DIR}"
+
 if [ -f inputs.sh ]; then
   source inputs.sh
 fi
 
 # Verify setup completed successfully
 if [ ! -f SETUP_COMPLETE ]; then
-  echo "ERROR: SETUP_COMPLETE marker not found. setup.sh may not have run." >&2
+  echo "ERROR: SETUP_COMPLETE marker not found in ${PW_PARENT_JOB_DIR}. setup.sh may not have run." >&2
   exit 1
 fi
 
@@ -37,7 +40,7 @@ fi
 if [ -f VNC_PASSWORD ]; then
   password=$(cat VNC_PASSWORD)
 else
-  echo "ERROR: VNC_PASSWORD file not found" >&2
+  echo "ERROR: VNC_PASSWORD file not found in ${PW_PARENT_JOB_DIR}" >&2
   exit 1
 fi
 
@@ -523,19 +526,19 @@ KASMEOF
 fi
 
 # =============================================================================
-# Write coordination files
+# Write coordination files to job directory
 # =============================================================================
 sleep 6  # Allow services to fully start
 
-hostname > HOSTNAME
-echo "${service_port}" > SESSION_PORT
-touch job.started
+hostname > "${PW_PARENT_JOB_DIR}/HOSTNAME"
+echo "${service_port}" > "${PW_PARENT_JOB_DIR}/SESSION_PORT"
+touch "${PW_PARENT_JOB_DIR}/job.started"
 
 echo "=========================================="
 echo "Desktop Service is RUNNING!"
 echo "=========================================="
-echo "HOSTNAME: $(cat HOSTNAME)"
-echo "SESSION_PORT: $(cat SESSION_PORT)"
+echo "HOSTNAME: $(cat ${PW_PARENT_JOB_DIR}/HOSTNAME)"
+echo "SESSION_PORT: $(cat ${PW_PARENT_JOB_DIR}/SESSION_PORT)"
 echo "=========================================="
 
 # =============================================================================
