@@ -12,14 +12,14 @@ sessions:
 
 jobs:
   # =============================================================================
-  # PREPROCESSING - runs on controller
+  # PREPROCESSING
   # =============================================================================
   preprocessing:
     steps:
       - name: Checkout service scripts
-        uses: parallelworks/checkout
         ssh:
           remoteHost: ${{ inputs.resource.ip }}
+        uses: parallelworks/checkout
         with:
           repo: https://github.com/parallelworks/activate-sessions.git
           branch: main
@@ -34,6 +34,14 @@ jobs:
           if [ -f inputs.sh ]; then
             scp inputs.sh ${{ inputs.resource.ip }}:${REMOTE_JOB_DIR}
           fi
+
+      - name: Run controller setup
+        ssh:
+          remoteHost: ${{ inputs.resource.ip }}
+        run: |
+          set -e
+          cd workflows/${{ inputs.workflow_dir }}
+          bash setup.sh
 
   # =============================================================================
   # SESSION RUNNER - runs the service script on compute node

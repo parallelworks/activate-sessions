@@ -1,6 +1,8 @@
 #!/bin/bash
-# start.sh - Hello World Service Startup Script
-# This script starts a simple HTTP server with a customizable greeting page
+# start.sh - Hello World Service Startup Script (runs on compute node)
+#
+# This script runs on the compute node (via scheduler or directly on controller).
+# It uses resources prepared by setup.sh which runs earlier on the controller.
 #
 # Environment variables:
 #   hello_message - Custom greeting message (default: "Hello World from ACTIVATE!")
@@ -21,8 +23,15 @@ if [ -f inputs.sh ]; then
 fi
 
 echo "=========================================="
-echo "Hello World Service Starting"
+echo "Hello World Service Starting (Compute Node)"
 echo "=========================================="
+
+# Verify setup completed successfully (optional sanity check)
+if [ -f SETUP_COMPLETE ]; then
+  echo "Setup phase completed successfully"
+else
+  echo "Warning: SETUP_COMPLETE marker not found"
+fi
 
 # =============================================================================
 # Port Allocation
