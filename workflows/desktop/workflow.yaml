@@ -160,15 +160,3 @@ jobs:
                 value: kde
               - label: LXDE
                 value: lxde
-
-          resolution:
-            type: dropdown
-            label: Screen Resolution
-            default: 1920x1080
-            options:
-              - label: "1280x1024"
-                value: "1280x1024"
-              - label: "1920x1080 (Recommended)"
-                value: "1920x1080"
-              - label: "2560x1440"
-                value: "2560x1440"

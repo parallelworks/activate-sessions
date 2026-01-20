@@ -530,8 +530,27 @@ fi
 # =============================================================================
 sleep 6  # Allow services to fully start
 
+echo "Writing coordination files to ${PW_PARENT_JOB_DIR}..."
+echo "  service_port=${service_port}"
+
+# Write files with verification
 hostname > "${PW_PARENT_JOB_DIR}/HOSTNAME"
 echo "${service_port}" > "${PW_PARENT_JOB_DIR}/SESSION_PORT"
+
+# Verify files were written before signaling job started
+if [ ! -f "${PW_PARENT_JOB_DIR}/HOSTNAME" ]; then
+  echo "ERROR: Failed to write HOSTNAME file" >&2
+  exit 1
+fi
+if [ ! -f "${PW_PARENT_JOB_DIR}/SESSION_PORT" ]; then
+  echo "ERROR: Failed to write SESSION_PORT file" >&2
+  exit 1
+fi
+
+# Sync filesystem to ensure files are visible (important for networked filesystems)
+sync
+
+# Signal that job has started (must be last)
 touch "${PW_PARENT_JOB_DIR}/job.started"
 
 echo "=========================================="

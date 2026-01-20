@@ -131,7 +131,6 @@ This format is preserved from the legacy workflow for backward compatibility.
 |-------|------|---------|-------------|
 | `resource` | compute-clusters | auto-select | Service host cluster |
 | `desktop.environment` | dropdown | auto | Desktop environment (auto/gnome/xfce/mate/cinnamon/kde/lxde) |
-| `desktop.resolution` | dropdown | 1920x1080 | Screen resolution (1280x1024, 1920x1080, 2560x1440) |
 
 ## Migration Notes
 
