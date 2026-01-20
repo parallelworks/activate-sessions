@@ -27,9 +27,9 @@ Validates that `workflow.yaml` files:
 - Are valid YAML
 - Have required sections (`permissions`, `sessions`, `jobs`, `on.execute.inputs`)
 - Have required jobs (`preprocessing`, `session_runner`, `wait_for_service`, `update_session`, `complete`)
-- Use marketplace/job_runner/v4.0
+- Use `marketplace/job_runner/v4.0`
 - Have correct job dependencies
-- Use parallelworks/checkout and parallelworks/update-session
+- Use `parallelworks/checkout` and `parallelworks/update-session`
 - Reference job outputs correctly
 - Don't use old pattern elements
 
@@ -44,14 +44,14 @@ Validates that `start.sh` service scripts:
 - Have proper shebang and error handling
 - Don't reference old pattern elements
 
-## Adding More Workflows
+## Adding Tests for New Workflows
 
 When adding a new workflow, add fixtures in `conftest.py` for the new workflow path:
 
 ```python
 @pytest.fixture
 def my_workflow_dir(workflows_dir: Path) -> Path:
-    return workflows_dir / "my-service" / "general"
+    return workflows_dir / "my-service"
 ```
 
-Then create a new test file or add tests that use these fixtures.
+Then create a new test file or add tests that use these fixtures. See existing fixtures for `hello-world` and `desktop` workflows as examples.

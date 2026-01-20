@@ -1,14 +1,15 @@
 # yaml-language-server: $schema=https://activate.parallel.works/workflow.schema.json
 ---
-# Hello World - Session workflow for SLURM/PBS/Controller execution
-# Modify service scripts in workflows/hello-world/ directory
+# Desktop - Interactive remote desktop session workflow
+# Supports TigerVNC, TurboVNC, KasmVNC, and Singularity containers
 
 permissions:
   - "*"
+
 sessions:
   session:
     useTLS: false
-    redirect: true
+    redirect: true # VNC uses redirect with custom slug for autoconnect
 
 jobs:
   # =============================================================================
@@ -22,7 +23,7 @@ jobs:
           remoteHost: ${{ inputs.resource.ip }}
         with:
           repo: https://github.com/parallelworks/activate-sessions.git
-          branch: main
+          branch: migrate/desktop
           sparse_checkout:
             - workflows/${{ inputs.workflow_dir }}
             - utils
@@ -51,6 +52,7 @@ jobs:
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
+      # Submit start.sh to compute node
       - name: Submit session script
         early-cancel: any-job-failed
         uses: marketplace/job_runner/v4.0
@@ -77,7 +79,7 @@ jobs:
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
-      - name: Wait for service ready
+      - name: Wait for desktop ready
         early-cancel: any-job-failed
         run: |
           set -e
@@ -85,10 +87,10 @@ jobs:
           source utils/wait_service.sh
 
   # =============================================================================
-  # UPDATE SESSION - configure session proxy
+  # UPDATE SESSION - configure session proxy with custom slug
   # =============================================================================
   update_session:
-    needs: [wait_for_service]
+    needs: [preprocessing, wait_for_service]
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
@@ -97,11 +99,12 @@ jobs:
           local_port=$(pw agent open-port)
           echo "local_port=${local_port}" | tee -a $OUTPUTS
 
-      - name: Update session
+      - name: Update session with custom slug
         uses: parallelworks/update-session
         with:
           target: ${{ inputs.resource.id }}
           name: ${{ sessions.session }}
+          slug: ${{ needs.preprocessing.outputs.slug }}
           remoteHost: ${{ needs.wait_for_service.outputs.HOSTNAME }}
           remotePort: ${{ needs.wait_for_service.outputs.SESSION_PORT }}
           local_port: ${{ needs.update_session.outputs.local_port }}
@@ -112,16 +115,13 @@ jobs:
   complete:
     needs: [update_session]
     steps:
-      - name: Session ready
+      - name: Display connection info
         run: |
-          local_port="${{ needs.update_session.outputs.local_port }}"
           basepath="/me/session/${PW_USER}/${{ sessions.session }}"
           echo "=========================================="
-          echo "Interactive Session is ready!"
+          echo "Desktop Session is ready!"
           echo "=========================================="
-          echo "  Proxy URL: https://${PW_PLATFORM_HOST}${basepath}/"
-          echo "  Local tunnel: ssh -L ${local_port}:localhost:${local_port} -o ProxyCommand=\"pw ssh --proxy-command %h\" ${PW_USER}@workspace"
-          echo "  Then access: http://localhost:${local_port}/"
+          echo "  Connect via: ${PW_PLATFORM_HOST}${basepath}/"
           echo "=========================================="
 
 "on":
@@ -135,14 +135,29 @@ jobs:
 
       workflow_dir:
         type: string
-        default: hello-world
+        default: desktop
         hidden: true
 
-      hello:
+      desktop:
         type: group
-        label: Hello World Settings
+        label: Desktop Settings
         items:
-          message:
-            type: string
-            label: Greeting Message
-            default: "Hello World"
+          environment:
+            type: dropdown
+            label: Desktop Environment
+            default: auto
+            options:
+              - label: Auto-detect
+                value: auto
+              - label: GNOME
+                value: gnome
+              - label: XFCE
+                value: xfce
+              - label: MATE
+                value: mate
+              - label: Cinnamon
+                value: cinnamon
+              - label: KDE Plasma
+                value: kde
+              - label: LXDE
+                value: lxde

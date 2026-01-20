@@ -1,5 +1,7 @@
 # VNC Server Workflow Migration Plan
 
+> **Note:** This is internal migration documentation for reference. The migrated workflow is located at `workflows/desktop/`.
+
 ## Overview
 
 Migrating the VNC server workflow from the legacy `interactive_session` repository to the new `activate-sessions` repository format. This establishes the pattern for migrating subsequent workflows.
@@ -9,10 +11,9 @@ Migrating the VNC server workflow from the legacy `interactive_session` reposito
 - Scripts: `~/interactive_session/vncserver/`
 
 **Target:**
-- `workflows/vncserver/workflow.yaml`
-- `workflows/vncserver/setup.sh` - Controller setup (downloads, containers)
-- `workflows/vncserver/start.sh` - Compute node service startup
-- Supporting scripts in `workflows/vncserver/`
+- `workflows/desktop/workflow.yaml`
+- `workflows/desktop/setup.sh` - Controller setup (downloads, containers)
+- `workflows/desktop/start.sh` - Compute node service startup
 
 ---
 
@@ -22,7 +23,7 @@ Migrating the VNC server workflow from the legacy `interactive_session` reposito
 |--------|---------------------------|---------------------|
 | Job Submitter | `marketplace/script_submitter/v3.5` | `marketplace/job_runner/v4.0` |
 | Script Structure | 3 separate scripts (controller, start, kill) | 2 scripts: `setup.sh` + `start.sh` |
-| Controller/Compute Split | `controller-v3.sh` → controller, `start-template-v3.sh` → compute | `setup.sh` → session_runner step 1 (controller), `start.sh` → session_runner step 2 (compute) |
+| Controller/Compute Split | `controller-v3.sh` → controller, `start-template-v3.sh` → compute | `setup.sh` → preprocessing (controller), `start.sh` → session_runner (compute) |
 | Script Location | `parallelworks/interactive_session` repo | `parallelworks/activate-sessions` repo |
 | Coordination Files | Mixed custom logic | Standardized via `utils/wait_service.sh` |
 | Session URL | Custom slug with embedded password | Same (preserved for autoconnect) |
@@ -35,22 +36,22 @@ Migrating the VNC server workflow from the legacy `interactive_session` reposito
 ### Step 1: Create New Workflow Directory
 
 ```bash
-mkdir -p /home/mattshax/activate-sessions/workflows/vncserver
+mkdir -p /home/mattshax/activate-sessions/workflows/desktop
 ```
 
 ### Step 2: Create Simplified `workflow.yaml`
 
 The new workflow follows the hello-world pattern with 5 jobs:
 
-1. **preprocessing** - Checkout scripts only
-2. **session_runner** - Step 1: run `setup.sh` on controller, Step 2: submit `start.sh` to compute
+1. **preprocessing** - Checkout scripts from git, run `setup.sh` on controller
+2. **session_runner** - Submit `start.sh` to compute node
 3. **wait_for_service** - Wait for VNC to be ready
 4. **update_session** - Configure session proxy with custom slug
 5. **complete** - Display connection info
 
 Key changes from legacy:
 - Move SSH config to job level (not per-step)
-- Call `setup.sh` in session_runner step 1 (before job submission)
+- Run `setup.sh` in preprocessing (so outputs are available before session_runner starts)
 - Remove inline script generation
 - Use `utils/wait_service.sh` for coordination
 
@@ -71,12 +72,12 @@ The legacy has 3 scripts that map to 2 new scripts:
 
 New structure:
 ```
-workflows/vncserver/
+workflows/desktop/
 ├── workflow.yaml          # Main workflow definition
 ├── setup.sh               # Controller: downloads, containers, Git LFS
 ├── start.sh               # Compute: VNC server, noVNC proxy, desktop
 ├── README.md              # Workflow documentation
-└── thumbnail.png          # VNC icon
+└── thumbnail.png          # Desktop icon (optional)
 ```
 
 ### Step 4: Define Input Schema
@@ -115,19 +116,19 @@ Implementation:
 ├─────────────────────────────────────────────────────────────────┤
 │ 1. Checkout scripts from activate-sessions repo                 │
 │ 2. Transfer user inputs                                         │
+│ 3. Run setup.sh (on controller) →                               │
+│    - Download noVNC from GitHub                                 │
+│    - Install Git LFS if needed                                  │
+│    - Pull containers (nginx, vncserver) via LFS                 │
+│    - Generate VNC password, build slug                          │
+│    - Write outputs (slug, password)                             │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ session_runner (sequential steps on controller)                 │
+│ session_runner (submit to compute node)                         │
 ├─────────────────────────────────────────────────────────────────┤
-│ Step 1: Run setup.sh (on controller) →                          │
-│   - Download noVNC from GitHub                                  │
-│   - Install Git LFS if needed                                   │
-│   - Pull containers (nginx, vncserver) via LFS                  │
-│   - Generate VNC password, build slug                           │
-│                                                                 │
-│ Step 2: Submit start.sh to compute node →                       │
+│ Submit start.sh to compute node →                               │
 │   - Detect VNC type (TigerVNC/TurboVNC/KasmVNC/container)       │
 │   - Find available display/port                                 │
 │   - Start VNC server with password                              │
@@ -179,10 +180,10 @@ sessions:
 
 jobs:
   preprocessing:
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
     steps:
       - name: Checkout service scripts
-        ssh:
-          remoteHost: ${{ inputs.resource.ip }}
         uses: parallelworks/checkout
         with:
           repo: https://github.com/parallelworks/activate-sessions.git
@@ -198,19 +199,17 @@ jobs:
             scp inputs.sh ${{ inputs.resource.ip }}:${REMOTE_JOB_DIR}
           fi
 
-  session_runner:
-    needs: [preprocessing]
-    ssh:
-      remoteHost: ${{ inputs.resource.ip }}
-    steps:
-      # Step 1: Run controller setup (downloads, containers, password generation)
       - name: Run controller setup
         run: |
           set -e
           cd workflows/${{ inputs.workflow_dir }}
           bash setup.sh
 
-      # Step 2: Submit start.sh to compute node
+  session_runner:
+    needs: [preprocessing]
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
       - name: Submit session script
         early-cancel: any-job-failed
         uses: marketplace/job_runner/v4.0
@@ -253,7 +252,7 @@ jobs:
         with:
           target: ${{ inputs.resource.id }}
           name: ${{ sessions.session }}
-          slug: ${{ needs.session_runner.outputs.slug }}
+          slug: ${{ needs.preprocessing.outputs.slug }}
           remoteHost: ${{ needs.wait_for_service.outputs.HOSTNAME }}
           remotePort: ${{ needs.wait_for_service.outputs.SESSION_PORT }}
           local_port: ${{ needs.update_session.outputs.local_port }}
@@ -311,7 +310,7 @@ jobs:
               - {label: "1920x1080", value: "1920x1080"}
 ```
 
-### workflows/vncserver/setup.sh (Controller, session_runner step 1)
+### workflows/vncserver/setup.sh (Controller, preprocessing)
 
 ```bash
 #!/bin/bash
@@ -383,7 +382,7 @@ echo "${password}" > VNC_PASSWORD
 touch SETUP_COMPLETE
 ```
 
-### workflows/vncserver/start.sh (Compute Node, session_runner step 2)
+### workflows/vncserver/start.sh (Compute Node, session_runner)
 
 ```bash
 #!/bin/bash
@@ -602,7 +601,7 @@ Legacy `general_v4.yaml` capabilities mapped to new implementation:
 | Checkout scripts | `parallelworks/checkout` from `interactive_session` repo | `parallelworks/checkout` from `activate-sessions` repo | ✅ Planned |
 | Password generation | In preprocessing, writes to inputs.sh | In setup.sh, writes to VNC_PASSWORD + $OUTPUTS | ✅ Planned |
 | Slug generation | In preprocessing with embedded password | In setup.sh, same format | ✅ Planned |
-| Controller setup | Inline: controller-v3.sh concatenated | setup.sh called in session_runner step 1 | ✅ Planned |
+| Controller setup | Inline: controller-v3.sh concatenated | setup.sh called in preprocessing | ✅ Planned |
 | Service script | Inline: start-template-v3.sh concatenated | start.sh submitted via job_runner v4.0 | ✅ Planned |
 | Job submission | `script_submitter/v3.5` | `job_runner/v4.0` | ✅ Planned |
 | Wait for job start | Separate `wait_for_job_start` job | Integrated in `utils/wait_service.sh` | ✅ Planned |
