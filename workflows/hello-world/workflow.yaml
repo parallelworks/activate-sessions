@@ -215,9 +215,12 @@ jobs:
           gres:
             label: GPUs (gres)
             type: dropdown
-            default: "gpu:1"
-            tooltip: GPU resource specification (--gres). Keep in sync with training GPU count.
+            default: ""
+            optional: true
+            tooltip: GPU resource specification (--gres). Leave empty for CPU-only jobs.
             options:
+              - value: ""
+                label: "No GPU (CPU only)"
               - value: "gpu:1"
                 label: "1 GPU (gpu:1)"
               - value: "gpu:2"
