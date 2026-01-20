@@ -14,10 +14,14 @@ set -e
 # Configuration
 TIMEOUT=${WAIT_TIMEOUT:-5}
 RETRY_INTERVAL=${WAIT_RETRY_INTERVAL:-3}
-JOB_STARTED_FILE="${PW_PARENT_JOB_DIR}/job.started"
-HOSTNAME_FILE="${PW_PARENT_JOB_DIR}/HOSTNAME"
-SESSION_PORT_FILE="${PW_PARENT_JOB_DIR}/SESSION_PORT"
-JOB_ENDED_FILE="${PW_PARENT_JOB_DIR}/job.ended"
+
+# Normalize job directory path (remove trailing slash if present)
+JOB_DIR="${PW_PARENT_JOB_DIR%/}"
+
+JOB_STARTED_FILE="${JOB_DIR}/job.started"
+HOSTNAME_FILE="${JOB_DIR}/HOSTNAME"
+SESSION_PORT_FILE="${JOB_DIR}/SESSION_PORT"
+JOB_ENDED_FILE="${JOB_DIR}/job.ended"
 
 echo "=========================================="
 echo "wait_service.sh starting"
@@ -44,7 +48,7 @@ echo "$(date) Job started detected"
 # Allow NFS cache to sync (files are written before job.started but may not be visible yet)
 sleep 2
 # Force NFS cache refresh by listing directory
-ls -la "${PW_PARENT_JOB_DIR}/" >/dev/null 2>&1 || true
+ls -la "${JOB_DIR}/" >/dev/null 2>&1 || true
 
 # 2. Get hostname (with retry for NFS caching)
 echo "Reading hostname from ${HOSTNAME_FILE}..."
@@ -57,7 +61,7 @@ for i in 1 2 3; do
 done
 if [ ! -f "${HOSTNAME_FILE}" ]; then
   echo "$(date) ERROR: HOSTNAME file not found" >&2
-  ls -la "${PW_PARENT_JOB_DIR}/" >&2
+  ls -la "${JOB_DIR}/" >&2
   exit 1
 fi
 HOSTNAME=$(cat "${HOSTNAME_FILE}")
@@ -74,7 +78,7 @@ for i in 1 2 3; do
 done
 if [ ! -f "${SESSION_PORT_FILE}" ]; then
   echo "$(date) ERROR: SESSION_PORT file not found" >&2
-  ls -la "${PW_PARENT_JOB_DIR}/" >&2
+  ls -la "${JOB_DIR}/" >&2
   exit 1
 fi
 SESSION_PORT=$(cat "${SESSION_PORT_FILE}")

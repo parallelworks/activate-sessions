@@ -30,6 +30,9 @@ fi
 # =============================================================================
 # Configuration
 # =============================================================================
+# Normalize job directory path (remove trailing slash if present)
+JOB_DIR="${PW_PARENT_JOB_DIR%/}"
+
 NOVNC_VERSION="v1.6.0"
 SERVICE_PARENT_INSTALL_DIR="${HOME}/pw/software"
 CONTAINER_DIR="${HOME}/pw/singularity"
@@ -109,7 +112,7 @@ else
 fi
 
 # Ensure we're back in the workflow directory
-cd "${PW_PARENT_JOB_DIR}/workflows/desktop" 2>/dev/null || true
+cd "${JOB_DIR}/workflows/desktop" 2>/dev/null || true
 
 # Note: vncserver container is downloaded in start.sh only if needed (fallback)
 
@@ -133,13 +136,13 @@ echo "slug=${slug}" | tee -a $OUTPUTS
 
 # Write password and coordination files to job directory (not workflow directory)
 # start.sh and wait_service.sh expect these in $PW_PARENT_JOB_DIR
-echo "${password}" > "${PW_PARENT_JOB_DIR}/VNC_PASSWORD"
-chmod 600 "${PW_PARENT_JOB_DIR}/VNC_PASSWORD"
+echo "${password}" > "${JOB_DIR}/VNC_PASSWORD"
+chmod 600 "${JOB_DIR}/VNC_PASSWORD"
 
 # =============================================================================
 # Write setup complete marker to job directory
 # =============================================================================
-touch "${PW_PARENT_JOB_DIR}/SETUP_COMPLETE"
+touch "${JOB_DIR}/SETUP_COMPLETE"
 
 echo "=========================================="
 echo "Setup complete!"
