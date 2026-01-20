@@ -23,7 +23,7 @@ jobs:
           remoteHost: ${{ inputs.resource.ip }}
         with:
           repo: https://github.com/parallelworks/activate-sessions.git
-          branch: migrate/desktop
+          branch: main
           sparse_checkout:
             - workflows/${{ inputs.workflow_dir }}
             - utils
