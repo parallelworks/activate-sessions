@@ -139,6 +139,8 @@ while [ ${attempt} -le ${MAX_SERVICE_ATTEMPTS} ]; do
     fi
 
     log "Exiting with success..."
+    # Explicitly close all file descriptors to ensure SSH session closes
+    exec 1>&- 2>&- 0<&-
     exit 0
   fi
 
