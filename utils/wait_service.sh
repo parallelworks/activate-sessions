@@ -1,16 +1,15 @@
 #!/bin/bash
 # wait_service.sh - Wait for session service to be ready
-# Usage: source utils/wait_service.sh
+# Usage: bash utils/wait_service.sh
 #
 # Requires: PW_PARENT_JOB_DIR to be set
 # Outputs to $OUTPUTS:
 #   - HOSTNAME: Target hostname where service is running
 #   - SESSION_PORT: Port number of the service
 #
-# Returns: 0 on success, 1 on failure
+# Exits: 0 on success, 1 on failure
 
-# Don't use set -e when sourced - it can cause issues with the parent shell
-# set -e
+set -e
 
 # Configuration
 TIMEOUT=${WAIT_TIMEOUT:-5}
@@ -50,7 +49,7 @@ attempt=1
 while [ ! -f "${JOB_STARTED_FILE}" ]; do
   if [ -f "${JOB_ENDED_FILE}" ]; then
     log "ERROR: Job ended before it started"
-    return 1
+    exit 1
   fi
   log "[Attempt ${attempt}] Waiting for ${JOB_STARTED_FILE}..."
   sleep "${RETRY_INTERVAL}"
@@ -93,7 +92,7 @@ wait_for_file() {
 log "Phase 2: Getting hostname..."
 if ! wait_for_file "${HOSTNAME_FILE}" "HOSTNAME"; then
   log "ERROR: Failed to get HOSTNAME"
-  return 1
+  exit 1
 fi
 SERVICE_HOSTNAME=$(cat "${HOSTNAME_FILE}")
 log "HOSTNAME=${SERVICE_HOSTNAME}"
@@ -109,7 +108,7 @@ fi
 log "Phase 3: Getting session port..."
 if ! wait_for_file "${SESSION_PORT_FILE}" "SESSION_PORT"; then
   log "ERROR: Failed to get SESSION_PORT"
-  return 1
+  exit 1
 fi
 SESSION_PORT=$(cat "${SESSION_PORT_FILE}")
 log "SESSION_PORT=${SESSION_PORT}"
@@ -136,16 +135,16 @@ while [ ${attempt} -le ${MAX_SERVICE_ATTEMPTS} ]; do
     # Verify outputs were written
     if [ -n "${OUTPUTS:-}" ] && [ -f "${OUTPUTS}" ]; then
       log "OUTPUTS file contents:"
-      cat "${OUTPUTS}" 2>&1 | while read line; do log "  $line"; done
+      while IFS= read -r line; do log "  $line"; done < "${OUTPUTS}"
     fi
 
-    log "Returning 0 (success) to caller..."
-    return 0
+    log "Exiting with success..."
+    exit 0
   fi
 
   if [ -f "${JOB_ENDED_FILE}" ]; then
     log "ERROR: Job ended before service was ready"
-    return 1
+    exit 1
   fi
 
   log "Service not responding. Retrying in ${RETRY_INTERVAL} seconds..."
@@ -154,4 +153,4 @@ while [ ${attempt} -le ${MAX_SERVICE_ATTEMPTS} ]; do
 done
 
 log "ERROR: Service did not respond after ${MAX_SERVICE_ATTEMPTS} attempts"
-return 1
+exit 1

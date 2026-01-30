@@ -96,11 +96,8 @@ jobs:
       - name: Wait for service ready
         early-cancel: any-job-failed
         run: |
-          set -e
-          # Source the reusable wait script
-          source utils/wait_service.sh
-          # Explicit exit to ensure shell terminates cleanly on SLURM
-          exit 0
+          # Execute the wait script (not sourced - runs as subprocess)
+          bash utils/wait_service.sh
 
   # =============================================================================
   # UPDATE SESSION - configure session proxy
