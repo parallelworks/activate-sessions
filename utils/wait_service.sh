@@ -127,7 +127,7 @@ attempt=1
 while [ ${attempt} -le ${MAX_SERVICE_ATTEMPTS} ]; do
   log "[Attempt ${attempt}/${MAX_SERVICE_ATTEMPTS}] Checking http://${SERVICE_HOSTNAME}:${SESSION_PORT}..."
 
-  if curl --silent --connect-timeout "${TIMEOUT}" "http://${SERVICE_HOSTNAME}:${SESSION_PORT}" >/dev/null 2>&1; then
+  if curl --silent --connect-timeout "${TIMEOUT}" --max-time "${TIMEOUT}" "http://${SERVICE_HOSTNAME}:${SESSION_PORT}" -o /dev/null 2>&1; then
     log "SUCCESS: Service is responding!"
     log "=========================================="
     log "wait_service.sh completed successfully"
