@@ -14,6 +14,51 @@
 # Coordinate files written here:
 #   - SETUP_COMPLETE - Signals that setup completed successfully
 
+# =============================================================================
+# EARLY LOGGING - Capture everything before any failures
+# =============================================================================
+EARLY_LOG="${HOME}/hello-world-setup-$(date +%Y%m%d-%H%M%S).log"
+exec > >(tee -a "${EARLY_LOG}") 2>&1
+
+echo "=========================================="
+echo "SETUP.SH LAUNCHED: $(date)"
+echo "Early log location: ${EARLY_LOG}"
+echo "=========================================="
+
+# Log critical environment info immediately
+echo ""
+echo "[DEBUG] === ENVIRONMENT SNAPSHOT ==="
+echo "[DEBUG] Date: $(date)"
+echo "[DEBUG] Hostname: $(hostname)"
+echo "[DEBUG] User: $(whoami)"
+echo "[DEBUG] PWD: $(pwd)"
+echo "[DEBUG] HOME: ${HOME}"
+echo "[DEBUG] PW_PARENT_JOB_DIR: ${PW_PARENT_JOB_DIR:-UNSET}"
+echo "[DEBUG] PW_SESSION_NAME: ${PW_SESSION_NAME:-UNSET}"
+echo ""
+
+# Log all environment variables for debugging
+echo "[DEBUG] === ALL ENVIRONMENT VARIABLES ==="
+env | sort
+echo "[DEBUG] === END ENVIRONMENT VARIABLES ==="
+echo ""
+
+# Error handler to capture failures
+error_handler() {
+    local exit_code=$?
+    local line_number=$1
+    echo ""
+    echo "[ERROR] =========================================="
+    echo "[ERROR] SETUP SCRIPT FAILED!"
+    echo "[ERROR] Exit code: ${exit_code}"
+    echo "[ERROR] Failed at line: ${line_number}"
+    echo "[ERROR] Command: ${BASH_COMMAND}"
+    echo "[ERROR] Log file: ${EARLY_LOG}"
+    echo "[ERROR] =========================================="
+    exit ${exit_code}
+}
+trap 'error_handler ${LINENO}' ERR
+
 set -e
 
 [[ "${DEBUG:-}" == "true" ]] && set -x
@@ -23,9 +68,28 @@ echo "Hello World Setup (Controller Node)"
 echo "=========================================="
 
 # Normalize job directory path (remove trailing slash if present)
+echo "[DEBUG] Checking PW_PARENT_JOB_DIR..."
+if [ -z "${PW_PARENT_JOB_DIR}" ]; then
+    echo "[ERROR] PW_PARENT_JOB_DIR is not set!"
+    exit 1
+fi
 JOB_DIR="${PW_PARENT_JOB_DIR%/}"
+echo "[DEBUG] JOB_DIR set to: ${JOB_DIR}"
 echo "Job directory: ${JOB_DIR}"
 echo "Working directory: $(pwd)"
+
+# Verify JOB_DIR exists or can be created
+echo "[DEBUG] Checking if JOB_DIR exists..."
+if [ ! -d "${JOB_DIR}" ]; then
+    echo "[WARN] JOB_DIR does not exist, attempting to create: ${JOB_DIR}"
+    mkdir -p "${JOB_DIR}" || {
+        echo "[ERROR] Failed to create JOB_DIR: ${JOB_DIR}"
+        exit 1
+    }
+fi
+echo "[DEBUG] JOB_DIR exists: ${JOB_DIR}"
+echo "[DEBUG] JOB_DIR contents:"
+ls -la "${JOB_DIR}" 2>&1 || echo "[DEBUG] Could not list JOB_DIR"
 
 # Source inputs if available
 if [ -f inputs.sh ]; then
@@ -70,7 +134,15 @@ mkdir -p logs
 # Write setup complete marker to job directory
 # =============================================================================
 # start.sh and wait_service.sh expect coordination files in $PW_PARENT_JOB_DIR
-touch "${JOB_DIR}/SETUP_COMPLETE"
+echo "[DEBUG] Writing SETUP_COMPLETE marker to ${JOB_DIR}/SETUP_COMPLETE"
+touch "${JOB_DIR}/SETUP_COMPLETE" || {
+    echo "[ERROR] Failed to create SETUP_COMPLETE marker"
+    exit 1
+}
+
+# Copy the setup log to the job directory for easier access
+echo "[DEBUG] Copying setup log to job directory..."
+cp "${EARLY_LOG}" "${JOB_DIR}/setup.log" 2>/dev/null || true
 
 echo "=========================================="
 echo "Setup complete!"
@@ -79,4 +151,8 @@ echo "Shared resources prepared:"
 echo "  - Python: ${PYTHON_CMD}"
 echo "  - Logs directory: $(pwd)/logs"
 echo "  - SETUP_COMPLETE: ${JOB_DIR}/SETUP_COMPLETE"
+echo "  - Setup log: ${EARLY_LOG}"
 echo "=========================================="
+echo ""
+echo "[DEBUG] Final JOB_DIR contents:"
+ls -la "${JOB_DIR}" 2>&1
