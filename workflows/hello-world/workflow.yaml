@@ -97,40 +97,50 @@ jobs:
         run: |
           echo "=== Wait for Service ==="
           echo "PW_PARENT_JOB_DIR: ${PW_PARENT_JOB_DIR}"
-          echo "Current directory: $(pwd)"
           JOB_DIR="${PW_PARENT_JOB_DIR%/}"
           echo "Looking for markers in: ${JOB_DIR}"
-          ls -la "${JOB_DIR}/" 2>&1 || echo "Warning: cannot list job dir"
 
           # Wait for job to start
           echo "Waiting for job.started..."
-          while [ ! -f "${JOB_DIR}/job.started" ]; do
-            [ -f "${JOB_DIR}/job.ended" ] && echo "ERROR: Job ended before starting" && exit 1
-            echo "  waiting... ($(date))"
+          while [ ! -f "${JOB_DIR}/job.started" ] && [ ! -f "${JOB_DIR}/job.ended" ]; do
             sleep 3
           done
-          echo "Job started!"
 
-          # Read connection info (with NFS cache refresh)
-          sleep 2 && ls -la "${JOB_DIR}/" >/dev/null 2>&1
+          # Check if job ended before starting
+          if [ -f "${JOB_DIR}/job.ended" ] && [ ! -f "${JOB_DIR}/job.started" ]; then
+            echo "ERROR: Job ended before starting"
+            false
+          fi
+
+          echo "Job started! Reading connection info..."
+          sleep 2
           HOSTNAME=$(cat "${JOB_DIR}/HOSTNAME")
           SESSION_PORT=$(cat "${JOB_DIR}/SESSION_PORT")
           echo "HOSTNAME=${HOSTNAME}, SESSION_PORT=${SESSION_PORT}"
 
           # Wait for service to respond
-          echo "Waiting for service at http://${HOSTNAME}:${SESSION_PORT}..."
+          echo "Waiting for service..."
+          SERVICE_READY=false
           for i in $(seq 1 100); do
             if curl -s --connect-timeout 5 --max-time 5 "http://${HOSTNAME}:${SESSION_PORT}" -o /dev/null 2>&1; then
-              echo "Service is ready!"
-              echo "HOSTNAME=${HOSTNAME}" >> $OUTPUTS
-              echo "SESSION_PORT=${SESSION_PORT}" >> $OUTPUTS
-              exit 0
+              SERVICE_READY=true
+              break
             fi
-            [ -f "${JOB_DIR}/job.ended" ] && echo "ERROR: Job ended" && exit 1
-            echo "  attempt ${i}/100... ($(date))"
+            if [ -f "${JOB_DIR}/job.ended" ]; then
+              echo "ERROR: Job ended"
+              false
+            fi
             sleep 3
           done
-          echo "ERROR: Service timeout" && exit 1
+
+          if [ "$SERVICE_READY" = "true" ]; then
+            echo "Service is ready!"
+            echo "HOSTNAME=${HOSTNAME}" >> $OUTPUTS
+            echo "SESSION_PORT=${SESSION_PORT}" >> $OUTPUTS
+          else
+            echo "ERROR: Service timeout"
+            false
+          fi
 
   # =============================================================================
   # UPDATE SESSION - configure session proxy
