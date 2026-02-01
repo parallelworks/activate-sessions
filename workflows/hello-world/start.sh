@@ -16,15 +16,84 @@
 #   - SESSION_PORT - Allocated port
 #   - job.started  - Signals job has started
 
+# =============================================================================
+# EARLY LOGGING - Capture everything before any failures
+# =============================================================================
+# Write to a predictable location in HOME in case JOB_DIR doesn't exist
+EARLY_LOG="${HOME}/hello-world-start-$(date +%Y%m%d-%H%M%S).log"
+exec > >(tee -a "${EARLY_LOG}") 2>&1
+
+echo "=========================================="
+echo "START.SH LAUNCHED: $(date)"
+echo "Early log location: ${EARLY_LOG}"
+echo "=========================================="
+
+# Log critical environment info immediately
+echo ""
+echo "[DEBUG] === ENVIRONMENT SNAPSHOT ==="
+echo "[DEBUG] Date: $(date)"
+echo "[DEBUG] Hostname: $(hostname)"
+echo "[DEBUG] User: $(whoami)"
+echo "[DEBUG] Shell: $SHELL"
+echo "[DEBUG] PWD: $(pwd)"
+echo "[DEBUG] HOME: ${HOME}"
+echo "[DEBUG] BASH_SOURCE: ${BASH_SOURCE[0]}"
+echo "[DEBUG] PW_PARENT_JOB_DIR: ${PW_PARENT_JOB_DIR:-UNSET}"
+echo "[DEBUG] SLURM_JOB_ID: ${SLURM_JOB_ID:-UNSET}"
+echo "[DEBUG] SLURM_JOB_NAME: ${SLURM_JOB_NAME:-UNSET}"
+echo "[DEBUG] SLURM_NODELIST: ${SLURM_NODELIST:-UNSET}"
+echo "[DEBUG] SLURM_SUBMIT_DIR: ${SLURM_SUBMIT_DIR:-UNSET}"
+echo ""
+
+# Log all environment variables for debugging
+echo "[DEBUG] === ALL ENVIRONMENT VARIABLES ==="
+env | sort
+echo "[DEBUG] === END ENVIRONMENT VARIABLES ==="
+echo ""
+
+# Error handler to capture failures
+error_handler() {
+    local exit_code=$?
+    local line_number=$1
+    echo ""
+    echo "[ERROR] =========================================="
+    echo "[ERROR] SCRIPT FAILED!"
+    echo "[ERROR] Exit code: ${exit_code}"
+    echo "[ERROR] Failed at line: ${line_number}"
+    echo "[ERROR] Command: ${BASH_COMMAND}"
+    echo "[ERROR] Log file: ${EARLY_LOG}"
+    echo "[ERROR] =========================================="
+    exit ${exit_code}
+}
+trap 'error_handler ${LINENO}' ERR
+
 set -e
 
 [[ "${DEBUG:-}" == "true" ]] && set -x
 
 # Get the directory where this script is located
+echo "[DEBUG] Determining SCRIPT_DIR..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "[DEBUG] SCRIPT_DIR resolved to: ${SCRIPT_DIR}"
 
 # Normalize job directory path (remove trailing slash if present)
+echo "[DEBUG] Checking PW_PARENT_JOB_DIR..."
+if [ -z "${PW_PARENT_JOB_DIR}" ]; then
+    echo "[ERROR] PW_PARENT_JOB_DIR is not set!"
+    exit 1
+fi
 JOB_DIR="${PW_PARENT_JOB_DIR%/}"
+echo "[DEBUG] JOB_DIR set to: ${JOB_DIR}"
+
+# Verify JOB_DIR exists
+echo "[DEBUG] Checking if JOB_DIR exists..."
+if [ ! -d "${JOB_DIR}" ]; then
+    echo "[ERROR] JOB_DIR does not exist: ${JOB_DIR}"
+    echo "[DEBUG] Listing parent directory..."
+    ls -la "$(dirname "${JOB_DIR}")" 2>&1 || echo "[DEBUG] Parent dir listing failed"
+    exit 1
+fi
+echo "[DEBUG] JOB_DIR exists: ${JOB_DIR}"
 
 echo "=========================================="
 echo "Hello World Service Starting (Compute Node)"
@@ -52,16 +121,41 @@ fi
 # =============================================================================
 # Port Allocation
 # =============================================================================
+echo ""
+echo "[DEBUG] === PORT ALLOCATION ==="
+echo "[DEBUG] Current service_port value: '${service_port:-UNSET}'"
+
 if [ -z "${service_port}" ] || [ "${service_port}" == "undefined" ]; then
-  # Try to find an available port using Python
-  service_port=$(~/pw/pw agent open-port)
+  echo "[DEBUG] Need to allocate port via pw agent..."
+  echo "[DEBUG] Checking if ~/pw/pw exists..."
+  if [ -x "${HOME}/pw/pw" ]; then
+    echo "[DEBUG] Found ${HOME}/pw/pw"
+  else
+    echo "[WARN] ${HOME}/pw/pw not found or not executable"
+    ls -la "${HOME}/pw/" 2>&1 || echo "[DEBUG] ${HOME}/pw/ directory listing failed"
+  fi
+
+  echo "[DEBUG] Running: ~/pw/pw agent open-port"
+  service_port=$(~/pw/pw agent open-port 2>&1) || {
+    echo "[ERROR] Failed to run ~/pw/pw agent open-port"
+    echo "[ERROR] Output was: ${service_port}"
+    exit 1
+  }
+  echo "[DEBUG] Port allocation returned: '${service_port}'"
 fi
 
 if [ -z "${service_port}" ]; then
-  echo "$(date) ERROR: Failed to allocate service port" >&2
+  echo "[ERROR] Failed to allocate service port - port is empty"
   exit 1
 fi
 
+# Validate port is numeric
+if ! [[ "${service_port}" =~ ^[0-9]+$ ]]; then
+  echo "[ERROR] Invalid port value (not numeric): '${service_port}'"
+  exit 1
+fi
+
+echo "[DEBUG] Service port validated: ${service_port}"
 echo "Service port: ${service_port}"
 
 # =============================================================================

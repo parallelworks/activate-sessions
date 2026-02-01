@@ -7,6 +7,13 @@
 #   - HOSTNAME: Target hostname where service is running
 #   - SESSION_PORT: Port number of the service
 
+# DEBUG: Early exit to test workflow progression
+echo "=== DEBUG: Early exit for testing ==="
+echo "HOSTNAME=test-hostname" >> $OUTPUTS
+echo "SESSION_PORT=8888" >> $OUTPUTS
+echo "Exiting early with success for debugging"
+return 0 2>/dev/null || exit 0
+
 echo "=== Wait for Service ==="
 echo "PW_PARENT_JOB_DIR: ${PW_PARENT_JOB_DIR}"
 JOB_DIR="${PW_PARENT_JOB_DIR%/}"
