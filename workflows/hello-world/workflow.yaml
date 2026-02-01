@@ -95,7 +95,7 @@ jobs:
     steps:
       - name: Wait for service ready
         early-cancel: any-job-failed
-        run: source utils/wait_service.sh
+        run: bash utils/wait_service.sh
 
   # =============================================================================
   # UPDATE SESSION - configure session proxy
