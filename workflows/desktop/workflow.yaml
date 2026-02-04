@@ -372,5 +372,5 @@ jobs:
             type: boolean
             label: Enable GPU Support (--nv)
             default: true
-            tooltip: Pass --nv flag to Singularity for NVIDIA GPU support
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' }}
+            tooltip: Pass --nv flag to Singularity for NVIDIA GPU support (safe on CPU-only nodes)
+            hidden: true
