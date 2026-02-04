@@ -59,26 +59,12 @@ fi
 if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     echo "Starting KasmVNC Container Mode..."
 
-    # Read container path
-    if [ -f "${JOB_DIR}/KASMVNC_CONTAINER_PATH" ]; then
-        KASMVNC_CONTAINER_SIF=$(cat "${JOB_DIR}/KASMVNC_CONTAINER_PATH")
-    else
-        echo "ERROR: KASMVNC_CONTAINER_PATH not found" >&2
-        exit 1
+    # Read container runtime (default to singularity for backward compatibility)
+    container_runtime="singularity"
+    if [ -f "${JOB_DIR}/KASMVNC_CONTAINER_RUNTIME" ]; then
+        container_runtime=$(cat "${JOB_DIR}/KASMVNC_CONTAINER_RUNTIME")
     fi
-
-    # Verify container exists
-    if [ ! -f "${KASMVNC_CONTAINER_SIF}" ]; then
-        echo "ERROR: KasmVNC container not found at ${KASMVNC_CONTAINER_SIF}" >&2
-        exit 1
-    fi
-    echo "Using container: ${KASMVNC_CONTAINER_SIF}"
-
-    # Read GPU setting
-    enable_gpu="true"
-    if [ -f "${JOB_DIR}/KASMVNC_CONTAINER_ENABLE_GPU" ]; then
-        enable_gpu=$(cat "${JOB_DIR}/KASMVNC_CONTAINER_ENABLE_GPU")
-    fi
+    echo "Container runtime: ${container_runtime}"
 
     # Get service port
     service_port=$(pw agent open-port)
@@ -92,15 +78,6 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     BASE_PATH="/me/session/${resource_user}/${PW_SESSION_NAME}/"
     echo "BASE_PATH: ${BASE_PATH}"
 
-    # GPU flag
-    GPU_FLAG=""
-    if [[ "${enable_gpu}" == "true" ]]; then
-        GPU_FLAG="--nv"
-        echo "GPU support enabled (--nv)"
-    else
-        echo "GPU support disabled"
-    fi
-
     # Cleanup function for KasmVNC container mode
     cleanup_kasmvnc_container() {
         echo "$(date) Stopping KasmVNC container..."
@@ -110,18 +87,97 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     }
     trap cleanup_kasmvnc_container EXIT INT TERM
 
-    # Start KasmVNC container
-    echo "Starting Singularity container..."
-    singularity run \
-        ${GPU_FLAG} \
-        --env BASE_PATH="${BASE_PATH}" \
-        --env NGINX_PORT="${service_port}" \
-        --env KASM_PORT=8590 \
-        --bind /etc/passwd:/etc/passwd:ro \
-        --bind /etc/group:/etc/group:ro \
-        "${KASMVNC_CONTAINER_SIF}" &
-    kasmvnc_container_pid=$!
-    echo "KasmVNC container started with PID ${kasmvnc_container_pid}"
+    # =========================================================================
+    # Enroot Runtime
+    # =========================================================================
+    if [[ "${container_runtime}" == "enroot" ]]; then
+        echo "Using Enroot runtime..."
+
+        # Read Enroot container path
+        if [ -f "${JOB_DIR}/KASMVNC_ENROOT_PATH" ]; then
+            ENROOT_CONTAINER_PATH=$(cat "${JOB_DIR}/KASMVNC_ENROOT_PATH")
+        else
+            ENROOT_CONTAINER_PATH="/mnt/data/containers/kasmvnc.sqsh"
+        fi
+
+        # Verify .sqsh file exists
+        if [ ! -f "${ENROOT_CONTAINER_PATH}" ]; then
+            echo "ERROR: Enroot container not found at ${ENROOT_CONTAINER_PATH}" >&2
+            exit 1
+        fi
+        echo "Using Enroot container: ${ENROOT_CONTAINER_PATH}"
+
+        # Container instance name
+        ENROOT_CONTAINER_NAME="kasmvnc"
+
+        # Create container instance if it doesn't exist (one-time per user)
+        if ! enroot list 2>/dev/null | grep -q "^${ENROOT_CONTAINER_NAME}$"; then
+            echo "Creating Enroot container instance..."
+            enroot create --name "${ENROOT_CONTAINER_NAME}" "${ENROOT_CONTAINER_PATH}"
+        else
+            echo "Enroot container instance already exists"
+        fi
+
+        # Start Enroot container (GPU support is enabled by default in Enroot)
+        echo "Starting Enroot container..."
+        enroot start --rw \
+            -e HOME=/tmp/${USER}-kasmhome \
+            -e BASE_PATH="${BASE_PATH}" \
+            -e NGINX_PORT="${service_port}" \
+            -e KASM_PORT=8590 \
+            "${ENROOT_CONTAINER_NAME}" /usr/local/bin/run_kasm_nginx.sh &
+        kasmvnc_container_pid=$!
+        echo "Enroot container started with PID ${kasmvnc_container_pid}"
+
+    # =========================================================================
+    # Singularity Runtime (default)
+    # =========================================================================
+    else
+        echo "Using Singularity runtime..."
+
+        # Read container path
+        if [ -f "${JOB_DIR}/KASMVNC_CONTAINER_PATH" ]; then
+            KASMVNC_CONTAINER_SIF=$(cat "${JOB_DIR}/KASMVNC_CONTAINER_PATH")
+        else
+            echo "ERROR: KASMVNC_CONTAINER_PATH not found" >&2
+            exit 1
+        fi
+
+        # Verify container exists
+        if [ ! -f "${KASMVNC_CONTAINER_SIF}" ]; then
+            echo "ERROR: KasmVNC container not found at ${KASMVNC_CONTAINER_SIF}" >&2
+            exit 1
+        fi
+        echo "Using container: ${KASMVNC_CONTAINER_SIF}"
+
+        # Read GPU setting
+        enable_gpu="true"
+        if [ -f "${JOB_DIR}/KASMVNC_CONTAINER_ENABLE_GPU" ]; then
+            enable_gpu=$(cat "${JOB_DIR}/KASMVNC_CONTAINER_ENABLE_GPU")
+        fi
+
+        # GPU flag
+        GPU_FLAG=""
+        if [[ "${enable_gpu}" == "true" ]]; then
+            GPU_FLAG="--nv"
+            echo "GPU support enabled (--nv)"
+        else
+            echo "GPU support disabled"
+        fi
+
+        # Start Singularity container
+        echo "Starting Singularity container..."
+        singularity run \
+            ${GPU_FLAG} \
+            --env BASE_PATH="${BASE_PATH}" \
+            --env NGINX_PORT="${service_port}" \
+            --env KASM_PORT=8590 \
+            --bind /etc/passwd:/etc/passwd:ro \
+            --bind /etc/group:/etc/group:ro \
+            "${KASMVNC_CONTAINER_SIF}" &
+        kasmvnc_container_pid=$!
+        echo "Singularity container started with PID ${kasmvnc_container_pid}"
+    fi
 
     # Write coordination files
     sleep 6  # Allow container to start
