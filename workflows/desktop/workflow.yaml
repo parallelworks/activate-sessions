@@ -334,6 +334,7 @@ jobs:
             label: Container Path
             prefillDefault: true
             placeholder: "/path/to/kasmvnc.sif"
+            default: "~/kasmvnc.sif"
             tooltip: Full path to the KasmVNC container on the remote system
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_source != 'path' }}
 
