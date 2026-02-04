@@ -117,7 +117,7 @@ jobs:
         with:
           target: ${{ inputs.resource.id }}
           name: ${{ sessions.session }}
-          slug: /
+          slug: "/"
           remoteHost: ${{ needs.wait_for_service.outputs.HOSTNAME }}
           remotePort: ${{ needs.wait_for_service.outputs.SESSION_PORT }}
           local_port: ${{ needs.update_session.outputs.local_port }}
