@@ -1,6 +1,6 @@
 #!/bin/bash
 # wait_service.sh - Wait for session service to be ready
-# Usage: source utils/wait_service.sh
+# Usage: bash utils/wait_service.sh
 #
 # Requires: PW_PARENT_JOB_DIR to be set
 # Outputs to $OUTPUTS:

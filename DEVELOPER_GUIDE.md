@@ -227,7 +227,7 @@ Supports:
 Waits for your service to be ready. Uses `utils/wait_service.sh`:
 
 ```bash
-source utils/wait_service.sh
+bash utils/wait_service.sh
 ```
 
 This script:

@@ -97,7 +97,7 @@ jobs:
     steps:
       - name: Wait for desktop ready
         early-cancel: any-job-failed
-        run: source utils/wait_service.sh
+        run: bash utils/wait_service.sh
 
   # =============================================================================
   # UPDATE SESSION - configure session proxy with custom slug

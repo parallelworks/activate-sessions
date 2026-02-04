@@ -235,7 +235,7 @@ jobs:
     steps:
       - name: Wait for VNC ready
         run: |
-          source utils/wait_service.sh
+          bash utils/wait_service.sh
 
   update_session:
     needs: [wait_for_service]
