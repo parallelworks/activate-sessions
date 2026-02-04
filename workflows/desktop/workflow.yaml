@@ -23,7 +23,7 @@ jobs:
           remoteHost: ${{ inputs.resource.ip }}
         with:
           repo: https://github.com/parallelworks/activate-sessions.git
-          branch: feature/x11web-container-mode
+          branch: main
           sparse_checkout:
             - workflows/${{ inputs.workflow_dir }}
             - utils
