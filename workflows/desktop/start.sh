@@ -89,7 +89,7 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     echo "Service port: ${service_port}"
 
     # Build BASE_PATH for the container
-    BASE_PATH="/me/session/${USER}/${PW_SESSION_NAME}/"
+    BASE_PATH="/me/session/${resource_user}/${PW_SESSION_NAME}/"
     echo "BASE_PATH: ${BASE_PATH}"
 
     # GPU flag
