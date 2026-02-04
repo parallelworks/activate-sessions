@@ -23,8 +23,20 @@ if [ -f "${JOB_DIR}/job.ended" ] && [ ! -f "${JOB_DIR}/job.started" ]; then
   echo "ERROR: Job ended before starting"
   false
 else
-  echo "Job started! Reading connection info..."
-  sleep 2
+  echo "Job started! Waiting for connection info..."
+
+  # Wait for SESSION_PORT file to exist (start.sh writes this after allocating port)
+  echo "Waiting for SESSION_PORT file..."
+  while [ ! -f "${JOB_DIR}/SESSION_PORT" ] && [ ! -f "${JOB_DIR}/job.ended" ]; do
+    sleep 2
+  done
+
+  if [ -f "${JOB_DIR}/job.ended" ] && [ ! -f "${JOB_DIR}/SESSION_PORT" ]; then
+    echo "ERROR: Job ended before writing SESSION_PORT"
+    false
+    exit 1
+  fi
+
   SERVICE_HOSTNAME=$(cat "${JOB_DIR}/HOSTNAME")
   SERVICE_PORT=$(cat "${JOB_DIR}/SESSION_PORT")
   echo "HOSTNAME=${SERVICE_HOSTNAME}, SESSION_PORT=${SERVICE_PORT}"

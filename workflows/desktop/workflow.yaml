@@ -23,7 +23,7 @@ jobs:
           remoteHost: ${{ inputs.resource.ip }}
         with:
           repo: https://github.com/parallelworks/activate-sessions.git
-          branch: main
+          branch: feature/x11web-container-mode
           sparse_checkout:
             - workflows/${{ inputs.workflow_dir }}
             - utils
@@ -117,7 +117,7 @@ jobs:
         with:
           target: ${{ inputs.resource.id }}
           name: ${{ sessions.session }}
-          slug: ${{ needs.preprocessing.outputs.slug }}
+          slug: /
           remoteHost: ${{ needs.wait_for_service.outputs.HOSTNAME }}
           remotePort: ${{ needs.wait_for_service.outputs.SESSION_PORT }}
           local_port: ${{ needs.update_session.outputs.local_port }}
@@ -286,10 +286,22 @@ jobs:
         type: group
         label: Desktop Settings
         items:
+          vnc_mode:
+            type: dropdown
+            label: VNC Server Mode
+            default: native
+            tooltip: Choose how the VNC server is provided
+            options:
+              - label: "Native (auto-detect installed VNC)"
+                value: native
+              - label: "KasmVNC Container (Singularity)"
+                value: kasmvnc_container
+
           environment:
             type: dropdown
             label: Desktop Environment
             default: auto
+            hidden: ${{ inputs.desktop.vnc_mode == 'kasmvnc_container' }}
             options:
               - label: Auto-detect
                 value: auto
@@ -305,3 +317,42 @@ jobs:
                 value: kde
               - label: LXDE
                 value: lxde
+
+          kasmvnc_container_source:
+            type: dropdown
+            label: Container Source
+            default: path
+            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' }}
+            options:
+              - label: "Path on remote system"
+                value: path
+              - label: "Pull from Git LFS"
+                value: git_lfs
+
+          kasmvnc_container_path:
+            type: string
+            label: Container Path
+            placeholder: "/path/to/kasmvnc.sif"
+            tooltip: Full path to the KasmVNC container on the remote system
+            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_source != 'path' }}
+
+          kasmvnc_git_repo:
+            type: string
+            label: Git Repository
+            default: "https://github.com/parallelworks/singularity-containers.git"
+            tooltip: Git repository URL containing the KasmVNC container
+            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_source != 'git_lfs' }}
+
+          kasmvnc_git_path:
+            type: string
+            label: Container Path in Repo
+            default: "kasmvnc"
+            tooltip: Directory in the repository containing the container
+            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_source != 'git_lfs' }}
+
+          kasmvnc_enable_gpu:
+            type: boolean
+            label: Enable GPU Support (--nv)
+            default: true
+            tooltip: Pass --nv flag to Singularity for NVIDIA GPU support
+            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' }}
