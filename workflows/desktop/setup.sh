@@ -8,14 +8,14 @@
 # - Download noVNC from GitHub (compute nodes often lack internet) [native mode]
 # - Install Git LFS if needed
 # - Pull nginx container via Git LFS [native mode]
-# - Pull x11web container via Git LFS [x11web mode]
+# - Pull KasmVNC container via Git LFS [KasmVNC container mode]
 # - Generate VNC password and build connection slug [native mode]
 #
 # Coordinate files written here:
 #   - SETUP_COMPLETE - Signals that setup completed successfully
-#   - VNC_MODE - Which VNC mode is being used (native or x11web)
+#   - VNC_MODE - Which VNC mode is being used (native or kasmvnc_container)
 #   - VNC_PASSWORD - Generated password for start.sh to use [native mode]
-#   - X11WEB_CONTAINER_PATH - Path to x11web container [x11web mode]
+#   - KASMVNC_CONTAINER_PATH - Path to KasmVNC container [KasmVNC container mode]
 
 set -e
 
@@ -48,13 +48,13 @@ echo "VNC Mode: ${vnc_mode}"
 echo "${vnc_mode}" > "${JOB_DIR}/VNC_MODE"
 
 # =============================================================================
-# X11Web Container Mode
+# KasmVNC Container Mode
 # =============================================================================
-if [[ "${vnc_mode}" == "x11web" ]]; then
-    echo "X11Web mode: skipping noVNC and nginx downloads"
+if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
+    echo "KasmVNC Container mode: skipping noVNC and nginx downloads"
 
     # Ensure Git LFS is available (needed for git_lfs source)
-    if [[ "${desktop_x11web_container_source:-path}" == "git_lfs" ]]; then
+    if [[ "${desktop_kasmvnc_container_source:-path}" == "git_lfs" ]]; then
         if ! git lfs version >/dev/null 2>&1; then
             echo "Git LFS not found, installing..."
             git clone --depth 1 https://github.com/parallelworks/singularity-containers.git \
@@ -71,13 +71,13 @@ if [[ "${vnc_mode}" == "x11web" ]]; then
             echo "Git LFS already available: $(git lfs version)"
         fi
 
-        # Pull x11web container via sparse checkout + Git LFS
-        X11WEB_SIF="${CONTAINER_DIR}/x11web.sif"
-        if [ ! -f "${X11WEB_SIF}" ] || [ ! -s "${X11WEB_SIF}" ]; then
-            echo "Fetching x11web container via sparse checkout..."
+        # Pull KasmVNC container via sparse checkout + Git LFS
+        KASMVNC_CONTAINER_SIF="${CONTAINER_DIR}/kasmvnc.sif"
+        if [ ! -f "${KASMVNC_CONTAINER_SIF}" ] || [ ! -s "${KASMVNC_CONTAINER_SIF}" ]; then
+            echo "Fetching KasmVNC container via sparse checkout..."
 
             # Remove empty/corrupt file if it exists
-            rm -f "${X11WEB_SIF}" 2>/dev/null || true
+            rm -f "${KASMVNC_CONTAINER_SIF}" 2>/dev/null || true
 
             # Pull to tmp location first
             TMP_CONTAINER_DIR="$(mktemp -d)/singularity-containers"
@@ -85,8 +85,8 @@ if [[ "${vnc_mode}" == "x11web" ]]; then
 
             cd "${TMP_CONTAINER_DIR}"
             git init
-            git_repo="${desktop_x11web_git_repo:-https://github.com/parallelworks/singularity-containers.git}"
-            git_path="${desktop_x11web_git_path:-x11web}"
+            git_repo="${desktop_kasmvnc_git_repo:-https://github.com/parallelworks/singularity-containers.git}"
+            git_path="${desktop_kasmvnc_git_path:-kasmvnc}"
             git remote add origin "${git_repo}"
             git config core.sparseCheckout true
             echo "${git_path}/*" > .git/info/sparse-checkout
@@ -98,41 +98,41 @@ if [[ "${vnc_mode}" == "x11web" ]]; then
             # Join SIF parts if split, otherwise just copy
             mkdir -p "${CONTAINER_DIR}"
 
-            # Check if there are split parts (x11web.sif.00, x11web.sif.01, etc.)
-            if compgen -G "${git_path}/x11web.sif.*" > /dev/null 2>&1; then
+            # Check if there are split parts (kasmvnc.sif.00, kasmvnc.sif.01, etc.)
+            if compgen -G "${git_path}/kasmvnc.sif.*" > /dev/null 2>&1; then
                 echo "Joining SIF parts..."
-                cat ${git_path}/x11web.sif.* > "${CONTAINER_DIR}/x11web.sif"
-            elif [ -f "${git_path}/x11web.sif" ]; then
-                echo "Copying x11web container..."
-                cp "${git_path}/x11web.sif" "${CONTAINER_DIR}/x11web.sif"
+                cat ${git_path}/kasmvnc.sif.* > "${CONTAINER_DIR}/kasmvnc.sif"
+            elif [ -f "${git_path}/kasmvnc.sif" ]; then
+                echo "Copying KasmVNC container..."
+                cp "${git_path}/kasmvnc.sif" "${CONTAINER_DIR}/kasmvnc.sif"
             else
-                echo "WARNING: x11web container not found after pull" >&2
+                echo "WARNING: KasmVNC container not found after pull" >&2
             fi
 
             cd - >/dev/null
             rm -rf "${TMP_CONTAINER_DIR}"
 
-            echo "x11web container cached at ${X11WEB_SIF}"
+            echo "KasmVNC container cached at ${KASMVNC_CONTAINER_SIF}"
         else
-            echo "x11web container already present at ${X11WEB_SIF}"
+            echo "KasmVNC container already present at ${KASMVNC_CONTAINER_SIF}"
         fi
 
-        echo "${X11WEB_SIF}" > "${JOB_DIR}/X11WEB_CONTAINER_PATH"
+        echo "${KASMVNC_CONTAINER_SIF}" > "${JOB_DIR}/KASMVNC_CONTAINER_PATH"
     else
         # User-provided path
-        container_path="${desktop_x11web_container_path}"
+        container_path="${desktop_kasmvnc_container_path}"
         if [ -z "${container_path}" ]; then
-            echo "ERROR: x11web_container_path not provided" >&2
+            echo "ERROR: kasmvnc_container_path not provided" >&2
             exit 1
         fi
         echo "Using user-provided container path: ${container_path}"
-        echo "${container_path}" > "${JOB_DIR}/X11WEB_CONTAINER_PATH"
+        echo "${container_path}" > "${JOB_DIR}/KASMVNC_CONTAINER_PATH"
     fi
 
     # Write GPU setting for start.sh
-    echo "${desktop_x11web_enable_gpu:-true}" > "${JOB_DIR}/X11WEB_ENABLE_GPU"
+    echo "${desktop_kasmvnc_enable_gpu:-true}" > "${JOB_DIR}/KASMVNC_CONTAINER_ENABLE_GPU"
 
-    # Build basepath for slug (x11web mode doesn't need password in slug)
+    # Build basepath for slug (KasmVNC container mode doesn't need password in slug)
     basepath="/me/session/${PW_USER}/${PW_SESSION_NAME}"
     slug=""
     echo "slug=${slug}" | tee -a $OUTPUTS
@@ -241,8 +241,8 @@ echo "=========================================="
 echo "Setup complete!"
 echo "=========================================="
 echo "VNC Mode: ${vnc_mode}"
-if [[ "${vnc_mode}" == "x11web" ]]; then
-    echo "X11Web container: $(cat ${JOB_DIR}/X11WEB_CONTAINER_PATH)"
+if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
+    echo "KasmVNC container: $(cat ${JOB_DIR}/KASMVNC_CONTAINER_PATH)"
 else
     echo "Shared resources prepared:"
     echo "  - noVNC: ${NOVNC_INSTALL_DIR}"

@@ -49,30 +49,30 @@ fi
 echo "VNC Mode: ${vnc_mode}"
 
 # =============================================================================
-# X11Web Container Mode
+# KasmVNC Container Mode
 # =============================================================================
-if [[ "${vnc_mode}" == "x11web" ]]; then
-    echo "Starting X11Web Container Mode..."
+if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
+    echo "Starting KasmVNC Container Mode..."
 
     # Read container path
-    if [ -f "${JOB_DIR}/X11WEB_CONTAINER_PATH" ]; then
-        X11WEB_SIF=$(cat "${JOB_DIR}/X11WEB_CONTAINER_PATH")
+    if [ -f "${JOB_DIR}/KASMVNC_CONTAINER_PATH" ]; then
+        KASMVNC_CONTAINER_SIF=$(cat "${JOB_DIR}/KASMVNC_CONTAINER_PATH")
     else
-        echo "ERROR: X11WEB_CONTAINER_PATH not found" >&2
+        echo "ERROR: KASMVNC_CONTAINER_PATH not found" >&2
         exit 1
     fi
 
     # Verify container exists
-    if [ ! -f "${X11WEB_SIF}" ]; then
-        echo "ERROR: X11Web container not found at ${X11WEB_SIF}" >&2
+    if [ ! -f "${KASMVNC_CONTAINER_SIF}" ]; then
+        echo "ERROR: KasmVNC container not found at ${KASMVNC_CONTAINER_SIF}" >&2
         exit 1
     fi
-    echo "Using container: ${X11WEB_SIF}"
+    echo "Using container: ${KASMVNC_CONTAINER_SIF}"
 
     # Read GPU setting
     enable_gpu="true"
-    if [ -f "${JOB_DIR}/X11WEB_ENABLE_GPU" ]; then
-        enable_gpu=$(cat "${JOB_DIR}/X11WEB_ENABLE_GPU")
+    if [ -f "${JOB_DIR}/KASMVNC_CONTAINER_ENABLE_GPU" ]; then
+        enable_gpu=$(cat "${JOB_DIR}/KASMVNC_CONTAINER_ENABLE_GPU")
     fi
 
     # Get service port
@@ -96,16 +96,16 @@ if [[ "${vnc_mode}" == "x11web" ]]; then
         echo "GPU support disabled"
     fi
 
-    # Cleanup function for x11web mode
-    cleanup_x11web() {
-        echo "$(date) Stopping X11Web container..."
-        if [ -n "${x11web_pid:-}" ]; then
-            kill ${x11web_pid} 2>/dev/null || true
+    # Cleanup function for KasmVNC container mode
+    cleanup_kasmvnc_container() {
+        echo "$(date) Stopping KasmVNC container..."
+        if [ -n "${kasmvnc_container_pid:-}" ]; then
+            kill ${kasmvnc_container_pid} 2>/dev/null || true
         fi
     }
-    trap cleanup_x11web EXIT INT TERM
+    trap cleanup_kasmvnc_container EXIT INT TERM
 
-    # Start x11web container
+    # Start KasmVNC container
     echo "Starting Singularity container..."
     singularity run \
         ${GPU_FLAG} \
@@ -114,9 +114,9 @@ if [[ "${vnc_mode}" == "x11web" ]]; then
         --env KASM_PORT=8590 \
         --bind /etc/passwd:/etc/passwd:ro \
         --bind /etc/group:/etc/group:ro \
-        "${X11WEB_SIF}" &
-    x11web_pid=$!
-    echo "X11Web container started with PID ${x11web_pid}"
+        "${KASMVNC_CONTAINER_SIF}" &
+    kasmvnc_container_pid=$!
+    echo "KasmVNC container started with PID ${kasmvnc_container_pid}"
 
     # Write coordination files
     sleep 6  # Allow container to start
@@ -135,7 +135,7 @@ if [[ "${vnc_mode}" == "x11web" ]]; then
     touch "${JOB_DIR}/job.started"
 
     echo "=========================================="
-    echo "X11Web Desktop Service is RUNNING!"
+    echo "KasmVNC Container Desktop Service is RUNNING!"
     echo "=========================================="
     echo "HOSTNAME: $(cat ${JOB_DIR}/HOSTNAME)"
     echo "SESSION_PORT: $(cat ${JOB_DIR}/SESSION_PORT)"
@@ -143,7 +143,7 @@ if [[ "${vnc_mode}" == "x11web" ]]; then
     echo "=========================================="
 
     # Wait for container to exit
-    wait ${x11web_pid}
+    wait ${kasmvnc_container_pid}
 
 # =============================================================================
 # Native VNC Mode (existing behavior)
