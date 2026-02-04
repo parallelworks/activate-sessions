@@ -93,7 +93,7 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             git init
             git_repo="${desktop_kasmvnc_git_repo:-https://github.com/parallelworks/singularity-containers.git}"
             git_path="${desktop_kasmvnc_git_path:-kasmvnc}"
-            git_branch="${desktop_kasmvnc_git_branch:-add-kasmvnc}"
+            git_branch="${desktop_kasmvnc_git_branch:-main}"
             git remote add origin "${git_repo}"
             git config core.sparseCheckout true
             echo "${git_path}/*" > .git/info/sparse-checkout
@@ -141,8 +141,8 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
 
     # Build basepath for slug (KasmVNC container mode doesn't need password in slug)
     basepath="/me/session/${PW_USER}/${PW_SESSION_NAME}"
-    slug=""
-    echo "slug=${slug}" | tee -a $OUTPUTS
+    slug="vnc.html?resize=remote&autoconnect=true&show_dot=true&path=websockify&host=${PW_PLATFORM_HOST}${basepath}/&dt=0"
+    echo "slug=${slug}"  | tee -a $OUTPUTS
 
 # =============================================================================
 # Native VNC Mode (existing behavior)
