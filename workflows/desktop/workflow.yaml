@@ -33,6 +33,7 @@ jobs:
           set -e
           REMOTE_JOB_DIR="./pw/jobs/${PW_WORKFLOW_NAME}/${PW_JOB_NUMBER}/"
           if [ -f inputs.sh ]; then
+            echo "export PW_PLATFORM_HOST=$PW_PLATFORM_HOST" >> inputs.sh
             scp inputs.sh ${{ inputs.resource.ip }}:${REMOTE_JOB_DIR}
           fi
 
