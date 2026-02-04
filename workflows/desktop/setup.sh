@@ -128,7 +128,7 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
 
     elif [[ "${desktop_kasmvnc_container_source:-path}" == "bucket" ]]; then
         # Pull from PW bucket
-        bucket_uri="${desktop_kasmvnc_bucket_uri}"
+        bucket_uri="${KASM_BUCKET_URI}"
         bucket_path="${desktop_kasmvnc_bucket_path:-kasmvnc.sif}"
         if [ -z "${bucket_uri}" ]; then
             echo "ERROR: kasmvnc_bucket not provided" >&2
