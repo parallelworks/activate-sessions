@@ -353,9 +353,9 @@ jobs:
           kasmvnc_git_branch:
             type: string
             label: Git Branch
-            default: "add-kasmvnc"
+            default: "main"
             tooltip: Git branch containing the KasmVNC container
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_source != 'git_lfs' }}
+            hidden: true
 
           kasmvnc_enable_gpu:
             type: boolean
