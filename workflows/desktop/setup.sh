@@ -59,8 +59,19 @@ echo "${PW_SESSION_NAME}" > "${JOB_DIR}/SESSION_NAME"
 if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     echo "KasmVNC Container mode: skipping noVNC and nginx downloads"
 
-    # Ensure Git LFS is available (needed for git_lfs source)
-    if [[ "${desktop_kasmvnc_container_source:-path}" == "git_lfs" ]]; then
+    # Determine container runtime (default to singularity for backward compatibility)
+    container_runtime="${KASM_CONTAINER_RUNTIME:-singularity}"
+    echo "Container runtime: ${container_runtime}"
+    echo "${container_runtime}" > "${JOB_DIR}/KASMVNC_CONTAINER_RUNTIME"
+
+    # Handle Enroot runtime
+    if [[ "${container_runtime}" == "enroot" ]]; then
+        enroot_path="${KASM_ENROOT_PATH:-/mnt/data/containers/kasmvnc.sqsh}"
+        echo "Using Enroot container: ${enroot_path}"
+        echo "${enroot_path}" > "${JOB_DIR}/KASMVNC_ENROOT_PATH"
+
+    # Handle Singularity runtime (git_lfs source)
+    elif [[ "${desktop_kasmvnc_container_source:-path}" == "git_lfs" ]]; then
         if ! git lfs version >/dev/null 2>&1; then
             echo "Git LFS not found, installing..."
             git clone --depth 1 https://github.com/parallelworks/singularity-containers.git \
