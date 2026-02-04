@@ -286,7 +286,12 @@ echo "Setup complete!"
 echo "=========================================="
 echo "VNC Mode: ${vnc_mode}"
 if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
-    echo "KasmVNC container: $(cat ${JOB_DIR}/KASMVNC_CONTAINER_PATH)"
+    echo "Container runtime: ${container_runtime:-singularity}"
+    if [[ "${container_runtime:-singularity}" == "enroot" ]]; then
+        echo "Enroot container: $(cat ${JOB_DIR}/KASMVNC_ENROOT_PATH 2>/dev/null || echo 'not set')"
+    else
+        echo "Singularity container: $(cat ${JOB_DIR}/KASMVNC_CONTAINER_PATH 2>/dev/null || echo 'not set')"
+    fi
 else
     echo "Shared resources prepared:"
     echo "  - noVNC: ${NOVNC_INSTALL_DIR}"
