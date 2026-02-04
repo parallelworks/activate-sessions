@@ -46,6 +46,7 @@ jobs:
           export KASM_BUCKET_URI="${{ inputs.desktop.kasmvnc_bucket.uri }}/${{ inputs.desktop.kasmvnc_bucket_path }}"
           export KASM_CONTAINER_RUNTIME="${{ inputs.desktop.kasmvnc_container_runtime }}"
           export KASM_ENROOT_PATH="${{ inputs.desktop.kasmvnc_enroot_container_path }}"
+          export KASM_MOUNT_PATH="${{ inputs.desktop.kasmvnc_mount_path }}"
           export PW_SESSION_NAME="${{ sessions.session }}"
           bash setup.sh
 
@@ -389,6 +390,14 @@ jobs:
             placeholder: "/mnt/data/containers/kasmvnc.sqsh"
             tooltip: Path to the Enroot container (.sqsh file)
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_runtime != 'enroot' }}
+
+          kasmvnc_mount_path:
+            type: string
+            label: Additional Mount Path
+            placeholder: "/mnt/data"
+            tooltip: Optional directory to mount into the container (e.g., /mnt/data for app executables)
+            optional: true
+            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' }}
 
           kasmvnc_enable_gpu:
             type: boolean
