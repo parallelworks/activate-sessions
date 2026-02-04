@@ -90,11 +90,12 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             git init
             git_repo="${desktop_kasmvnc_git_repo:-https://github.com/parallelworks/singularity-containers.git}"
             git_path="${desktop_kasmvnc_git_path:-kasmvnc}"
+            git_branch="${desktop_kasmvnc_git_branch:-add-kasmvnc}"
             git remote add origin "${git_repo}"
             git config core.sparseCheckout true
             echo "${git_path}/*" > .git/info/sparse-checkout
             git lfs install
-            git pull origin main
+            git pull origin "${git_branch}"
             # Explicitly fetch LFS files
             git lfs pull --include="${git_path}/*"
 
