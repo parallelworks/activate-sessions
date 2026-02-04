@@ -140,6 +140,9 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     echo "${desktop_kasmvnc_enable_gpu:-true}" > "${JOB_DIR}/KASMVNC_CONTAINER_ENABLE_GPU"
 
     # Build basepath for slug (KasmVNC container mode doesn't need password in slug)
+    if [ -z "${PW_PLATFORM_HOST}" ]; then
+        PW_PLATFORM_HOST="activate.parallel.works"
+    fi
     basepath="/me/session/${PW_USER}/${PW_SESSION_NAME}"
     slug="vnc.html?resize=remote&autoconnect=true&show_dot=true&path=websockify&host=${PW_PLATFORM_HOST}${basepath}/&dt=0"
     echo "slug=${slug}"  | tee -a $OUTPUTS
