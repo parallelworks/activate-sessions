@@ -40,13 +40,18 @@ if [ ! -f SETUP_COMPLETE ]; then
 fi
 
 # =============================================================================
-# Read VNC Mode
+# Read VNC Mode and Session Name
 # =============================================================================
 vnc_mode="native"
 if [ -f "${JOB_DIR}/VNC_MODE" ]; then
     vnc_mode=$(cat "${JOB_DIR}/VNC_MODE")
 fi
 echo "VNC Mode: ${vnc_mode}"
+
+# Read session name (written by setup.sh)
+if [ -f "${JOB_DIR}/SESSION_NAME" ]; then
+    PW_SESSION_NAME=$(cat "${JOB_DIR}/SESSION_NAME")
+fi
 
 # =============================================================================
 # KasmVNC Container Mode
