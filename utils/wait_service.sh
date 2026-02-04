@@ -41,10 +41,10 @@ else
   SERVICE_PORT=$(cat "${JOB_DIR}/SESSION_PORT")
   echo "HOSTNAME=${SERVICE_HOSTNAME}, SESSION_PORT=${SERVICE_PORT}"
 
-  # Wait for service to respond
+  # Wait for service to respond (up to ~10 minutes)
   echo "Waiting for service..."
   SERVICE_READY=false
-  for i in $(seq 1 100); do
+  for i in $(seq 1 200); do
     if curl -s --connect-timeout 5 --max-time 5 "http://${SERVICE_HOSTNAME}:${SERVICE_PORT}" -o /dev/null 2>&1; then
       SERVICE_READY=true
       break
