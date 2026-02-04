@@ -128,11 +128,13 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
         # Build mount flag if specified
         ENROOT_MOUNT_FLAG=""
         if [ -n "${MOUNT_PATH}" ]; then
-            ENROOT_MOUNT_FLAG="--mount ${MOUNT_PATH}:${MOUNT_PATH}"
+            ENROOT_MOUNT_FLAG="-m ${MOUNT_PATH}:${MOUNT_PATH}"
+            echo "Enroot mount: ${ENROOT_MOUNT_FLAG}"
         fi
 
         # Start Enroot container (GPU support is enabled by default in Enroot)
         echo "Starting Enroot container..."
+        echo "Command: enroot start --rw ${ENROOT_MOUNT_FLAG} -e HOME=/tmp/${USER}-kasmhome -e BASE_PATH=${BASE_PATH} -e NGINX_PORT=${service_port} -e KASM_PORT=8590 ${ENROOT_CONTAINER_NAME} /usr/local/bin/run_kasm_nginx.sh"
         enroot start --rw \
             ${ENROOT_MOUNT_FLAG} \
             -e HOME=/tmp/${USER}-kasmhome \
