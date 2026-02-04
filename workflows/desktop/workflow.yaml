@@ -298,7 +298,7 @@ jobs:
             options:
               - label: "Native (auto-detect installed VNC)"
                 value: native
-              - label: "KasmVNC Container (Singularity)"
+              - label: "KasmVNC Container"
                 value: kasmvnc_container
 
           environment:
