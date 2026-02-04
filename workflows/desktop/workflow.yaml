@@ -43,7 +43,7 @@ jobs:
         run: |
           set -e
           cd workflows/${{ inputs.workflow_dir }}
-          export KASM_BUCKET_URI="${{ inputs.desktop.kasmvnc_bucket.uri }}"
+          export KASM_BUCKET_URI="${{ inputs.desktop.kasmvnc_bucket.uri }}/${{ inputs.desktop.kasmvnc_bucket_path }}"
           export PW_SESSION_NAME="${{ sessions.session }}"
           bash setup.sh
 
