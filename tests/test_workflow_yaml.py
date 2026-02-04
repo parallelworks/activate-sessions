@@ -213,13 +213,13 @@ class TestWorkflowNoOldPatternReferences:
                 f"workflow.yaml should not use old utility module '{module}'"
 
 
-class TestWorkflowWaitServiceSourcesScript:
-    """Test that wait_for_service sources the wait_service.sh script."""
+class TestWorkflowWaitServiceRunsScript:
+    """Test that wait_for_service runs the wait_service.sh script."""
 
-    def test_wait_for_service_sources_wait_service_sh(self, workflow_content: str):
-        """Test that wait_for_service sources utils/wait_service.sh."""
-        assert "source utils/wait_service.sh" in workflow_content, \
-            "wait_for_service job must source 'utils/wait_service.sh'"
+    def test_wait_for_service_runs_wait_service_sh(self, workflow_content: str):
+        """Test that wait_for_service runs utils/wait_service.sh with bash."""
+        assert "bash utils/wait_service.sh" in workflow_content, \
+            "wait_for_service job must run 'bash utils/wait_service.sh'"
 
 
 def test_workflow_yaml_exists(workflow_yaml: Path):
