@@ -87,6 +87,13 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     }
     trap cleanup_kasmvnc_container EXIT INT TERM
 
+    # Read optional mount path
+    MOUNT_PATH=""
+    if [ -f "${JOB_DIR}/KASMVNC_MOUNT_PATH" ]; then
+        MOUNT_PATH=$(cat "${JOB_DIR}/KASMVNC_MOUNT_PATH")
+        echo "Mount path: ${MOUNT_PATH}"
+    fi
+
     # =========================================================================
     # Enroot Runtime
     # =========================================================================
@@ -118,9 +125,16 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             echo "Enroot container instance already exists"
         fi
 
+        # Build mount flag if specified
+        ENROOT_MOUNT_FLAG=""
+        if [ -n "${MOUNT_PATH}" ]; then
+            ENROOT_MOUNT_FLAG="--mount ${MOUNT_PATH}:${MOUNT_PATH}"
+        fi
+
         # Start Enroot container (GPU support is enabled by default in Enroot)
         echo "Starting Enroot container..."
         enroot start --rw \
+            ${ENROOT_MOUNT_FLAG} \
             -e HOME=/tmp/${USER}-kasmhome \
             -e BASE_PATH="${BASE_PATH}" \
             -e NGINX_PORT="${service_port}" \
@@ -165,10 +179,17 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             echo "GPU support disabled"
         fi
 
+        # Build mount flag if specified
+        SINGULARITY_MOUNT_FLAG=""
+        if [ -n "${MOUNT_PATH}" ]; then
+            SINGULARITY_MOUNT_FLAG="--bind ${MOUNT_PATH}:${MOUNT_PATH}"
+        fi
+
         # Start Singularity container
         echo "Starting Singularity container..."
         singularity run \
             ${GPU_FLAG} \
+            ${SINGULARITY_MOUNT_FLAG} \
             --env BASE_PATH="${BASE_PATH}" \
             --env NGINX_PORT="${service_port}" \
             --env KASM_PORT=8590 \
