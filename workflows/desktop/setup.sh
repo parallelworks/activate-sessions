@@ -127,24 +127,20 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
         echo "${KASMVNC_CONTAINER_SIF}" > "${JOB_DIR}/KASMVNC_CONTAINER_PATH"
 
     elif [[ "${desktop_kasmvnc_container_source:-path}" == "bucket" ]]; then
-        # Pull from PW bucket
+        # Pull from PW bucket (KASM_BUCKET_URI includes full path)
         bucket_uri="${KASM_BUCKET_URI}"
-        bucket_path="${desktop_kasmvnc_bucket_path:-kasmvnc.sif}"
         if [ -z "${bucket_uri}" ]; then
             echo "ERROR: kasmvnc_bucket not provided" >&2
             exit 1
         fi
 
-        # Construct full bucket path
-        full_bucket_uri="${bucket_uri}/${bucket_path}"
-
         KASMVNC_CONTAINER_SIF="${CONTAINER_DIR}/kasmvnc.sif"
         mkdir -p "${CONTAINER_DIR}"
 
         if [ ! -f "${KASMVNC_CONTAINER_SIF}" ] || [ ! -s "${KASMVNC_CONTAINER_SIF}" ]; then
-            echo "Pulling KasmVNC container from bucket: ${full_bucket_uri}"
+            echo "Pulling KasmVNC container from bucket: ${bucket_uri}"
             rm -f "${KASMVNC_CONTAINER_SIF}" 2>/dev/null || true
-            pw bucket cp "${full_bucket_uri}" "${KASMVNC_CONTAINER_SIF}"
+            pw bucket cp "${bucket_uri}" "${KASMVNC_CONTAINER_SIF}"
             echo "KasmVNC container cached at ${KASMVNC_CONTAINER_SIF}"
         else
             echo "KasmVNC container already present at ${KASMVNC_CONTAINER_SIF}"
