@@ -321,13 +321,13 @@ jobs:
           kasmvnc_container_source:
             type: dropdown
             label: Container Source
-            default: path
+            default: git_lfs
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' }}
             options:
+              - label: "Pull from Git LFS (cached)"
+                value: git_lfs
               - label: "Path on remote system"
                 value: path
-              - label: "Pull from Git LFS"
-                value: git_lfs
 
           kasmvnc_container_path:
             type: string
