@@ -117,7 +117,7 @@ jobs:
         with:
           target: ${{ inputs.resource.id }}
           name: ${{ sessions.session }}
-          slug: "/"
+          slug: ${{ needs.preprocessing.outputs.slug }}
           remoteHost: ${{ needs.wait_for_service.outputs.HOSTNAME }}
           remotePort: ${{ needs.wait_for_service.outputs.SESSION_PORT }}
           local_port: ${{ needs.update_session.outputs.local_port }}
@@ -321,13 +321,13 @@ jobs:
           kasmvnc_container_source:
             type: dropdown
             label: Container Source
-            default: git_lfs
+            default: path
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' }}
             options:
-              - label: "Pull from Git LFS (cached)"
-                value: git_lfs
               - label: "Path on remote system"
                 value: path
+              - label: "Pull from Git LFS"
+                value: git_lfs
 
           kasmvnc_container_path:
             type: string
@@ -349,13 +349,6 @@ jobs:
             default: "kasmvnc"
             tooltip: Directory in the repository containing the container
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_source != 'git_lfs' }}
-
-          kasmvnc_git_branch:
-            type: string
-            label: Git Branch
-            default: "main"
-            tooltip: Git branch containing the KasmVNC container
-            hidden: true
 
           kasmvnc_enable_gpu:
             type: boolean
