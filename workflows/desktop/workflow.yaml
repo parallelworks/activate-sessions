@@ -339,11 +339,18 @@ jobs:
             tooltip: Full path to the KasmVNC container on the remote system
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_source != 'path' }}
 
-          kasmvnc_bucket_uri:
+          kasmvnc_bucket:
+            type: bucket
+            label: Bucket
+            tooltip: PW bucket containing the KasmVNC container
+            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_source != 'bucket' }}
+
+          kasmvnc_bucket_path:
             type: string
-            label: Bucket URI
-            placeholder: "pw://bucket-name/path/to/kasmvnc.sif"
-            tooltip: PW bucket URI for the KasmVNC container (e.g., pw://my-bucket/containers/kasmvnc.sif)
+            label: Container Path in Bucket
+            default: "kasmvnc.sif"
+            placeholder: "kasmvnc.sif"
+            tooltip: Path to the container file within the bucket
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_source != 'bucket' }}
 
           kasmvnc_git_repo:
