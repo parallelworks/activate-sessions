@@ -327,6 +327,8 @@ jobs:
             options:
               - label: "Pull from Git LFS"
                 value: git_lfs
+              - label: "Pull from PW Bucket"
+                value: bucket
               - label: "Path on remote system"
                 value: path
 
@@ -336,6 +338,13 @@ jobs:
             placeholder: "/path/to/kasmvnc.sif"
             tooltip: Full path to the KasmVNC container on the remote system
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_source != 'path' }}
+
+          kasmvnc_bucket_uri:
+            type: string
+            label: Bucket URI
+            placeholder: "pw://bucket-name/path/to/kasmvnc.sif"
+            tooltip: PW bucket URI for the KasmVNC container (e.g., pw://my-bucket/containers/kasmvnc.sif)
+            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_source != 'bucket' }}
 
           kasmvnc_git_repo:
             type: string
