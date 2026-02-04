@@ -5,14 +5,17 @@
 # It runs BEFORE start.sh is submitted to the compute node.
 #
 # Use it to:
-# - Download noVNC from GitHub (compute nodes often lack internet)
+# - Download noVNC from GitHub (compute nodes often lack internet) [native mode]
 # - Install Git LFS if needed
-# - Pull nginx container via Git LFS
-# - Generate VNC password and build connection slug
+# - Pull nginx container via Git LFS [native mode]
+# - Pull x11web container via Git LFS [x11web mode]
+# - Generate VNC password and build connection slug [native mode]
 #
 # Coordinate files written here:
 #   - SETUP_COMPLETE - Signals that setup completed successfully
-#   - VNC_PASSWORD - Generated password for start.sh to use
+#   - VNC_MODE - Which VNC mode is being used (native or x11web)
+#   - VNC_PASSWORD - Generated password for start.sh to use [native mode]
+#   - X11WEB_CONTAINER_PATH - Path to x11web container [x11web mode]
 
 set -e
 
@@ -37,113 +40,197 @@ NOVNC_VERSION="v1.6.0"
 SERVICE_PARENT_INSTALL_DIR="${HOME}/pw/software"
 CONTAINER_DIR="${HOME}/pw/singularity"
 
-# =============================================================================
-# Download noVNC from GitHub releases
-# =============================================================================
-NOVNC_INSTALL_DIR="${SERVICE_PARENT_INSTALL_DIR}/noVNC-${NOVNC_VERSION}"
-if [ ! -d "${NOVNC_INSTALL_DIR}" ]; then
-    echo "Downloading noVNC ${NOVNC_VERSION}..."
-    mkdir -p "${SERVICE_PARENT_INSTALL_DIR}"
-    curl -L "https://github.com/novnc/noVNC/archive/refs/tags/${NOVNC_VERSION}.tar.gz" | \
-        tar -xz -C "${SERVICE_PARENT_INSTALL_DIR}"
-    echo "noVNC installed to: ${NOVNC_INSTALL_DIR}"
-else
-    echo "noVNC already installed at: ${NOVNC_INSTALL_DIR}"
-fi
+# Read VNC mode from inputs (default to native for backward compatibility)
+vnc_mode="${desktop_vnc_mode:-native}"
+echo "VNC Mode: ${vnc_mode}"
+
+# Write VNC mode marker for start.sh
+echo "${vnc_mode}" > "${JOB_DIR}/VNC_MODE"
 
 # =============================================================================
-# Ensure Git LFS is available
+# X11Web Container Mode
 # =============================================================================
-if ! git lfs version >/dev/null 2>&1; then
-    echo "Git LFS not found, installing..."
-    # Clone singularity-containers repo (shallow, LFS pointers only)
-    git clone --depth 1 https://github.com/parallelworks/singularity-containers.git \
-        ~/singularity-containers-tmp || true
+if [[ "${vnc_mode}" == "x11web" ]]; then
+    echo "X11Web mode: skipping noVNC and nginx downloads"
 
-    if [ -d ~/singularity-containers-tmp ]; then
-        bash ~/singularity-containers-tmp/scripts/sif_parts.sh install-lfs
-        rm -rf ~/singularity-containers-tmp
-        echo "Git LFS installed successfully"
+    # Ensure Git LFS is available (needed for git_lfs source)
+    if [[ "${desktop_x11web_container_source:-path}" == "git_lfs" ]]; then
+        if ! git lfs version >/dev/null 2>&1; then
+            echo "Git LFS not found, installing..."
+            git clone --depth 1 https://github.com/parallelworks/singularity-containers.git \
+                ~/singularity-containers-tmp || true
+
+            if [ -d ~/singularity-containers-tmp ]; then
+                bash ~/singularity-containers-tmp/scripts/sif_parts.sh install-lfs
+                rm -rf ~/singularity-containers-tmp
+                echo "Git LFS installed successfully"
+            else
+                echo "WARNING: Failed to install Git LFS" >&2
+            fi
+        else
+            echo "Git LFS already available: $(git lfs version)"
+        fi
+
+        # Pull x11web container via sparse checkout + Git LFS
+        X11WEB_SIF="${CONTAINER_DIR}/x11web.sif"
+        if [ ! -f "${X11WEB_SIF}" ] || [ ! -s "${X11WEB_SIF}" ]; then
+            echo "Fetching x11web container via sparse checkout..."
+
+            # Remove empty/corrupt file if it exists
+            rm -f "${X11WEB_SIF}" 2>/dev/null || true
+
+            # Pull to tmp location first
+            TMP_CONTAINER_DIR="$(mktemp -d)/singularity-containers"
+            mkdir -p "${TMP_CONTAINER_DIR}"
+
+            cd "${TMP_CONTAINER_DIR}"
+            git init
+            git_repo="${desktop_x11web_git_repo:-https://github.com/parallelworks/singularity-containers.git}"
+            git_path="${desktop_x11web_git_path:-x11web}"
+            git remote add origin "${git_repo}"
+            git config core.sparseCheckout true
+            echo "${git_path}/*" > .git/info/sparse-checkout
+            git lfs install
+            git pull origin main
+            # Explicitly fetch LFS files
+            git lfs pull --include="${git_path}/*"
+
+            # Join SIF parts if split, otherwise just copy
+            mkdir -p "${CONTAINER_DIR}"
+
+            # Check if there are split parts (x11web.sif.00, x11web.sif.01, etc.)
+            if compgen -G "${git_path}/x11web.sif.*" > /dev/null 2>&1; then
+                echo "Joining SIF parts..."
+                cat ${git_path}/x11web.sif.* > "${CONTAINER_DIR}/x11web.sif"
+            elif [ -f "${git_path}/x11web.sif" ]; then
+                echo "Copying x11web container..."
+                cp "${git_path}/x11web.sif" "${CONTAINER_DIR}/x11web.sif"
+            else
+                echo "WARNING: x11web container not found after pull" >&2
+            fi
+
+            cd - >/dev/null
+            rm -rf "${TMP_CONTAINER_DIR}"
+
+            echo "x11web container cached at ${X11WEB_SIF}"
+        else
+            echo "x11web container already present at ${X11WEB_SIF}"
+        fi
+
+        echo "${X11WEB_SIF}" > "${JOB_DIR}/X11WEB_CONTAINER_PATH"
     else
-        echo "WARNING: Failed to install Git LFS" >&2
+        # User-provided path
+        container_path="${desktop_x11web_container_path}"
+        if [ -z "${container_path}" ]; then
+            echo "ERROR: x11web_container_path not provided" >&2
+            exit 1
+        fi
+        echo "Using user-provided container path: ${container_path}"
+        echo "${container_path}" > "${JOB_DIR}/X11WEB_CONTAINER_PATH"
     fi
+
+    # Write GPU setting for start.sh
+    echo "${desktop_x11web_enable_gpu:-true}" > "${JOB_DIR}/X11WEB_ENABLE_GPU"
+
+    # Build basepath for slug (x11web mode doesn't need password in slug)
+    basepath="/me/session/${PW_USER}/${PW_SESSION_NAME}"
+    slug=""
+    echo "slug=${slug}" | tee -a $OUTPUTS
+
+# =============================================================================
+# Native VNC Mode (existing behavior)
+# =============================================================================
 else
-    echo "Git LFS already available: $(git lfs version)"
-fi
-
-# =============================================================================
-# Pull nginx container via sparse checkout + Git LFS
-# =============================================================================
-# Check if nginx.sif exists AND is non-empty (LFS pointer files are small)
-if [ ! -f "${CONTAINER_DIR}/nginx.sif" ] || [ ! -s "${CONTAINER_DIR}/nginx.sif" ]; then
-    echo "Fetching nginx container via sparse checkout..."
-
-    # Remove empty/corrupt file if it exists
-    rm -f "${CONTAINER_DIR}/nginx.sif" 2>/dev/null || true
-
-    # Pull to tmp location first
-    TMP_CONTAINER_DIR="$(mktemp -d)/singularity-containers"
-    mkdir -p "${TMP_CONTAINER_DIR}"
-
-    cd "${TMP_CONTAINER_DIR}"
-    git init
-    git remote add origin https://github.com/parallelworks/singularity-containers.git
-    git config core.sparseCheckout true
-    echo "nginx/*" > .git/info/sparse-checkout
-    git lfs install
-    git pull origin main
-    # Explicitly fetch LFS files - only pull nginx directory
-    git lfs pull --include="nginx/*"
-
-    # Join SIF parts if split, otherwise just copy
-    mkdir -p "${CONTAINER_DIR}"
-
-    # Check if there are split parts (nginx.sif.00, nginx.sif.01, etc.)
-    if compgen -G "nginx/nginx.sif.*" > /dev/null 2>&1; then
-        echo "Joining SIF parts..."
-        cat nginx/nginx.sif.* > "${CONTAINER_DIR}/nginx.sif"
-    elif [ -f "nginx/nginx.sif" ]; then
-        echo "Copying nginx container..."
-        cp nginx/nginx.sif "${CONTAINER_DIR}/nginx.sif"
+    # Download noVNC from GitHub releases
+    NOVNC_INSTALL_DIR="${SERVICE_PARENT_INSTALL_DIR}/noVNC-${NOVNC_VERSION}"
+    if [ ! -d "${NOVNC_INSTALL_DIR}" ]; then
+        echo "Downloading noVNC ${NOVNC_VERSION}..."
+        mkdir -p "${SERVICE_PARENT_INSTALL_DIR}"
+        curl -L "https://github.com/novnc/noVNC/archive/refs/tags/${NOVNC_VERSION}.tar.gz" | \
+            tar -xz -C "${SERVICE_PARENT_INSTALL_DIR}"
+        echo "noVNC installed to: ${NOVNC_INSTALL_DIR}"
     else
-        echo "WARNING: nginx container not found after pull" >&2
+        echo "noVNC already installed at: ${NOVNC_INSTALL_DIR}"
     fi
 
-    cd - >/dev/null
-    rm -rf "${TMP_CONTAINER_DIR}"
+    # Ensure Git LFS is available
+    if ! git lfs version >/dev/null 2>&1; then
+        echo "Git LFS not found, installing..."
+        git clone --depth 1 https://github.com/parallelworks/singularity-containers.git \
+            ~/singularity-containers-tmp || true
 
-    echo "nginx container cached at ${CONTAINER_DIR}/nginx.sif"
-else
-    echo "nginx container already present at ${CONTAINER_DIR}/nginx.sif"
+        if [ -d ~/singularity-containers-tmp ]; then
+            bash ~/singularity-containers-tmp/scripts/sif_parts.sh install-lfs
+            rm -rf ~/singularity-containers-tmp
+            echo "Git LFS installed successfully"
+        else
+            echo "WARNING: Failed to install Git LFS" >&2
+        fi
+    else
+        echo "Git LFS already available: $(git lfs version)"
+    fi
+
+    # Pull nginx container via sparse checkout + Git LFS
+    if [ ! -f "${CONTAINER_DIR}/nginx.sif" ] || [ ! -s "${CONTAINER_DIR}/nginx.sif" ]; then
+        echo "Fetching nginx container via sparse checkout..."
+
+        rm -f "${CONTAINER_DIR}/nginx.sif" 2>/dev/null || true
+
+        TMP_CONTAINER_DIR="$(mktemp -d)/singularity-containers"
+        mkdir -p "${TMP_CONTAINER_DIR}"
+
+        cd "${TMP_CONTAINER_DIR}"
+        git init
+        git remote add origin https://github.com/parallelworks/singularity-containers.git
+        git config core.sparseCheckout true
+        echo "nginx/*" > .git/info/sparse-checkout
+        git lfs install
+        git pull origin main
+        git lfs pull --include="nginx/*"
+
+        mkdir -p "${CONTAINER_DIR}"
+
+        if compgen -G "nginx/nginx.sif.*" > /dev/null 2>&1; then
+            echo "Joining SIF parts..."
+            cat nginx/nginx.sif.* > "${CONTAINER_DIR}/nginx.sif"
+        elif [ -f "nginx/nginx.sif" ]; then
+            echo "Copying nginx container..."
+            cp nginx/nginx.sif "${CONTAINER_DIR}/nginx.sif"
+        else
+            echo "WARNING: nginx container not found after pull" >&2
+        fi
+
+        cd - >/dev/null
+        rm -rf "${TMP_CONTAINER_DIR}"
+
+        echo "nginx container cached at ${CONTAINER_DIR}/nginx.sif"
+    else
+        echo "nginx container already present at ${CONTAINER_DIR}/nginx.sif"
+    fi
+
+    # Ensure we're back in the workflow directory
+    cd "${JOB_DIR}/workflows/desktop" 2>/dev/null || true
+
+    # Generate VNC password and slug
+    password=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12)
+    echo "Generated VNC password"
+    echo "password=${password}" | tee -a $OUTPUTS
+
+    # Build basepath
+    basepath="/me/session/${PW_USER}/${PW_SESSION_NAME}"
+
+    # Build slug with embedded password (for autoconnect)
+    if [ -z "${PW_PLATFORM_HOST}" ]; then
+        PW_PLATFORM_HOST="activate.parallel.works"
+    fi
+
+    slug="vnc.html?resize=remote&autoconnect=true&show_dot=true&path=websockify&password=${password}&host=${PW_PLATFORM_HOST}${basepath}/&dt=0"
+    echo "slug=${slug}" | tee -a $OUTPUTS
+
+    # Write password to job directory
+    echo "${password}" > "${JOB_DIR}/VNC_PASSWORD"
+    chmod 600 "${JOB_DIR}/VNC_PASSWORD"
 fi
-
-# Ensure we're back in the workflow directory
-cd "${JOB_DIR}/workflows/desktop" 2>/dev/null || true
-
-# Note: vncserver container is downloaded in start.sh only if needed (fallback)
-
-# =============================================================================
-# Generate VNC password and slug
-# =============================================================================
-password=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12)
-echo "Generated VNC password"
-echo "password=${password}" | tee -a $OUTPUTS
-
-# Build basepath - PW_SESSION_NAME is passed from workflow YAML (${{ sessions.session }})
-basepath="/me/session/${PW_USER}/${PW_SESSION_NAME}"
-
-# Build slug with embedded password (for autoconnect)
-if [ -z "${PW_PLATFORM_HOST}" ]; then
-    PW_PLATFORM_HOST="activate.parallel.works"
-fi
-
-slug="vnc.html?resize=remote&autoconnect=true&show_dot=true&path=websockify&password=${password}&host=${PW_PLATFORM_HOST}${basepath}/&dt=0"
-echo "slug=${slug}" | tee -a $OUTPUTS
-
-# Write password and coordination files to job directory (not workflow directory)
-# start.sh and wait_service.sh expect these in $PW_PARENT_JOB_DIR
-echo "${password}" > "${JOB_DIR}/VNC_PASSWORD"
-chmod 600 "${JOB_DIR}/VNC_PASSWORD"
 
 # =============================================================================
 # Write setup complete marker to job directory
@@ -153,8 +240,12 @@ touch "${JOB_DIR}/SETUP_COMPLETE"
 echo "=========================================="
 echo "Setup complete!"
 echo "=========================================="
-echo "Shared resources prepared:"
-echo "  - noVNC: ${NOVNC_INSTALL_DIR}"
-echo "  - nginx container: ${CONTAINER_DIR}/nginx.sif"
-echo "  - Git LFS: $(git lfs version)"
+echo "VNC Mode: ${vnc_mode}"
+if [[ "${vnc_mode}" == "x11web" ]]; then
+    echo "X11Web container: $(cat ${JOB_DIR}/X11WEB_CONTAINER_PATH)"
+else
+    echo "Shared resources prepared:"
+    echo "  - noVNC: ${NOVNC_INSTALL_DIR}"
+    echo "  - nginx container: ${CONTAINER_DIR}/nginx.sif"
+fi
 echo "=========================================="
