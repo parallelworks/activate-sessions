@@ -50,6 +50,9 @@ echo "VNC Mode: ${vnc_mode}"
 # Write VNC mode marker for start.sh
 echo "${vnc_mode}" > "${JOB_DIR}/VNC_MODE"
 
+# Write session name for start.sh (passed from workflow via environment)
+echo "${PW_SESSION_NAME}" > "${JOB_DIR}/SESSION_NAME"
+
 # =============================================================================
 # KasmVNC Container Mode
 # =============================================================================
