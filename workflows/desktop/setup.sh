@@ -25,16 +25,19 @@ echo "=========================================="
 echo "Desktop Setup (Controller Node)"
 echo "=========================================="
 
-# Source inputs if available
-if [ -f inputs.sh ]; then
-  source inputs.sh
-fi
-
 # =============================================================================
 # Configuration
 # =============================================================================
 # Normalize job directory path (remove trailing slash if present)
 JOB_DIR="${PW_PARENT_JOB_DIR%/}"
+
+# Source inputs from job directory (not current directory)
+if [ -f "${JOB_DIR}/inputs.sh" ]; then
+  echo "Sourcing inputs from ${JOB_DIR}/inputs.sh"
+  source "${JOB_DIR}/inputs.sh"
+else
+  echo "WARNING: inputs.sh not found in ${JOB_DIR}"
+fi
 
 NOVNC_VERSION="v1.6.0"
 SERVICE_PARENT_INSTALL_DIR="${HOME}/pw/software"
