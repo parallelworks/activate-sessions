@@ -355,6 +355,17 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
         # KasmVNC needs xstartup and user setup
         # Create xstartup for desktop environment detection (prefer Cinnamon, fallback to XFCE)
         XSTARTUP_PATH="${VNC_HOME}/.vnc/xstartup"
+
+        # Write startup command to a file that xstartup can read
+        STARTUP_CMD_FILE="${VNC_HOME}/.startup_command"
+        if [ -f "${JOB_DIR}/STARTUP_COMMAND" ]; then
+            cp "${JOB_DIR}/STARTUP_COMMAND" "${STARTUP_CMD_FILE}"
+            echo "Startup command file: ${STARTUP_CMD_FILE}"
+            echo "Command: $(cat ${STARTUP_CMD_FILE})"
+        else
+            rm -f "${STARTUP_CMD_FILE}" 2>/dev/null || true
+        fi
+
         # Always write xstartup to ensure latest config is used
         cat > "${XSTARTUP_PATH}" <<'KASMEOF'
 #!/bin/sh
@@ -372,12 +383,17 @@ if [ -n "$REAL_HOME" ] && [ -d "$REAL_HOME" ]; then
     cd "$HOME" 2>/dev/null || true
 fi
 
-# Run startup command if specified (passed via STARTUP_COMMAND env var)
+# Run startup command if specified (read from file written by start.sh)
 run_startup_command() {
-    if [ -n "${STARTUP_COMMAND:-}" ]; then
-        echo "Running startup command: ${STARTUP_COMMAND}"
-        sleep 3  # Wait for desktop to fully initialize
-        eval "${STARTUP_COMMAND}" &
+    # VNC_HOME_SAVED contains the temp VNC home where start.sh wrote the file
+    STARTUP_CMD_FILE="${VNC_HOME_SAVED}/.startup_command"
+    if [ -f "${STARTUP_CMD_FILE}" ]; then
+        STARTUP_COMMAND=$(cat "${STARTUP_CMD_FILE}")
+        if [ -n "${STARTUP_COMMAND}" ]; then
+            echo "Running startup command: ${STARTUP_COMMAND}"
+            sleep 3  # Wait for desktop to fully initialize
+            eval "${STARTUP_COMMAND}" &
+        fi
     fi
 }
 
