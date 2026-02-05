@@ -408,33 +408,74 @@ echo "*** running $de desktop ***"
 
 # Configure XFCE appearance (if xfconf-query available)
 configure_xfce_appearance() {
-    if command -v xfconf-query >/dev/null 2>&1; then
-        echo "Configuring XFCE appearance..."
-        # Set Adwaita-dark theme
-        xfconf-query -c xsettings -p /Net/ThemeName -s "Adwaita-dark" 2>/dev/null || true
-        xfconf-query -c xsettings -p /Net/IconThemeName -s "Adwaita" 2>/dev/null || true
-        xfconf-query -c xfwm4 -p /general/theme -s "Adwaita-dark" 2>/dev/null || true
-
-        # Set solid black background for all monitors/workspaces
-        for monitor in $(xfconf-query -c xfce4-desktop -l 2>/dev/null | grep -E 'last-image$' | sed 's|/last-image$||'); do
-            xfconf-query -c xfce4-desktop -p "${monitor}/color-style" -n -t int -s 0 2>/dev/null || true
-            xfconf-query -c xfce4-desktop -p "${monitor}/rgba1" -n -t double -t double -t double -t double -s 0 -s 0 -s 0 -s 1 2>/dev/null || true
-            xfconf-query -c xfce4-desktop -p "${monitor}/image-style" -n -t int -s 0 2>/dev/null || true
-        done
-
-        # Also try common paths
-        xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/color-style -n -t int -s 0 2>/dev/null || true
-        xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/rgba1 -n -t double -t double -t double -t double -s 0 -s 0 -s 0 -s 1 2>/dev/null || true
-        xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/image-style -n -t int -s 0 2>/dev/null || true
+    if ! command -v xfconf-query >/dev/null 2>&1; then
+        echo "xfconf-query not found, skipping appearance config"
+        return 0
     fi
+
+    echo "Configuring XFCE appearance..."
+
+    # Wait for xfce4-session to fully initialize
+    for i in 1 2 3 4 5; do
+        if xfconf-query -c xfce4-session -l >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+    done
+
+    # Set GTK theme (Adwaita-dark or fallback to Greybird-dark)
+    for theme in "Adwaita-dark" "Greybird-dark" "Arc-Dark"; do
+        if [ -d "/usr/share/themes/${theme}" ] || [ -d "$HOME/.themes/${theme}" ]; then
+            xfconf-query -c xsettings -p /Net/ThemeName -s "${theme}" --create -t string 2>/dev/null && break
+        fi
+    done
+
+    # Set window manager theme
+    for theme in "Adwaita-dark" "Greybird-dark" "Arc-Dark"; do
+        if [ -d "/usr/share/themes/${theme}/xfwm4" ] || [ -d "$HOME/.themes/${theme}/xfwm4" ]; then
+            xfconf-query -c xfwm4 -p /general/theme -s "${theme}" --create -t string 2>/dev/null && break
+        fi
+    done
+
+    # Set icon theme
+    xfconf-query -c xsettings -p /Net/IconThemeName -s "Adwaita" --create -t string 2>/dev/null || true
+
+    # Set solid black background - need to configure all detected monitors
+    # First, list all backdrop properties to find the actual monitor paths
+    monitors=$(xfconf-query -c xfce4-desktop -l 2>/dev/null | grep -E '/backdrop/screen.*/monitor.*/workspace.*' | sed 's|/[^/]*$||' | sort -u)
+
+    if [ -n "$monitors" ]; then
+        for monitor_path in $monitors; do
+            echo "Configuring backdrop: ${monitor_path}"
+            # image-style: 0=None (solid color), 1=Centered, 2=Tiled, 3=Stretched, 4=Scaled, 5=Zoomed
+            xfconf-query -c xfce4-desktop -p "${monitor_path}/image-style" -s 0 --create -t int 2>/dev/null || true
+            # color-style: 0=Solid, 1=Horizontal gradient, 2=Vertical gradient, 3=Transparent
+            xfconf-query -c xfce4-desktop -p "${monitor_path}/color-style" -s 0 --create -t int 2>/dev/null || true
+            # rgba1: primary color (black = 0,0,0,1)
+            xfconf-query -c xfce4-desktop -p "${monitor_path}/rgba1" -s 0.0 -s 0.0 -s 0.0 -s 1.0 --create -t double -t double -t double -t double 2>/dev/null || true
+        done
+    else
+        # Fallback: try common paths
+        for path in \
+            "/backdrop/screen0/monitor0/workspace0" \
+            "/backdrop/screen0/monitorscreen/workspace0" \
+            "/backdrop/screen0/monitorVNC-0/workspace0"; do
+            xfconf-query -c xfce4-desktop -p "${path}/image-style" -s 0 --create -t int 2>/dev/null || true
+            xfconf-query -c xfce4-desktop -p "${path}/color-style" -s 0 --create -t int 2>/dev/null || true
+            xfconf-query -c xfce4-desktop -p "${path}/rgba1" -s 0.0 -s 0.0 -s 0.0 -s 1.0 --create -t double -t double -t double -t double 2>/dev/null || true
+        done
+    fi
+
+    echo "XFCE appearance configured"
 }
 
 case "$de" in
 xfce)
     # XFCE - preferred desktop for KasmVNC
     echo "Starting XFCE desktop environment..."
-    # Configure appearance and run startup command after starting
-    (sleep 2 && configure_xfce_appearance && run_startup_command) &
+    # Configure appearance and run startup command after desktop fully starts
+    # Need longer delay for xfdesktop to initialize and register with xfconf
+    (sleep 5 && configure_xfce_appearance && run_startup_command) &
     exec dbus-run-session -- xfce4-session
     ;;
 cinnamon)
@@ -474,8 +515,8 @@ kde)
 *)
     # Safe fallback to XFCE (works well with KasmVNC)
     echo "Unknown desktop '$de', falling back to XFCE..."
-    # Configure appearance and run startup command after starting
-    (sleep 2 && configure_xfce_appearance && run_startup_command) &
+    # Configure appearance and run startup command after desktop fully starts
+    (sleep 5 && configure_xfce_appearance && run_startup_command) &
     exec dbus-run-session -- xfce4-session
     ;;
 esac
