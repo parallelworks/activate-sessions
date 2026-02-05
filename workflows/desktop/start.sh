@@ -122,25 +122,42 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     fi
     echo "KasmVNC websocket port: ${kasm_port}"
 
+    # Clean up ALL stale VNC sessions from this user before selecting a display
+    echo "Cleaning up stale VNC sessions..."
+    pkill -u $(whoami) -f "Xvnc" 2>/dev/null || true
+    sleep 1  # Give processes time to exit
+    # Clean up any leftover lock/socket files for displays we might use
+    for d in $(seq 1 99); do
+        rm -f "/tmp/.X11-unix/X${d}" "/tmp/.X${d}-lock" 2>/dev/null || true
+    done
+
     # Find available VNC display (5901-5999 range)
+    # Checks: port not listening, no running Xvnc process on that display
     find_available_vnc_display() {
+        # Get listening ports once (try ss first, fall back to netstat)
+        local listening
+        listening=$(ss -tuln 2>/dev/null || netstat -tuln 2>/dev/null || echo "")
+
         for display_num in $(seq 1 99 | shuf); do
             local port=$((5900 + display_num))
-            if ! netstat -tuln 2>/dev/null | grep -q ":${port} " && \
-               ! [ -e "/tmp/.X11-unix/X${display_num}" ] && \
-               ! [ -e "/tmp/.X${display_num}-lock" ]; then
-                echo "${display_num}"
-                return 0
+            # Check port is not in use
+            if echo "${listening}" | grep -q ":${port} "; then
+                continue
             fi
+            # Check no Xvnc process is running on this display
+            if pgrep -u $(whoami) -f "Xvnc.*:${display_num}( |$)" >/dev/null 2>&1; then
+                continue
+            fi
+            echo "${display_num}"
+            return 0
         done
         echo "1"  # Fallback to :1
     }
     vnc_display=$(find_available_vnc_display)
     echo "VNC display: :${vnc_display}"
 
-    # Kill any stale VNC sessions for this user
-    echo "Cleaning up stale VNC sessions..."
-    pkill -u $(whoami) -f "Xvnc.*:${vnc_display}" 2>/dev/null || true
+    # Force-clean the selected display (remove any leftover artifacts)
+    pkill -u $(whoami) -f "Xvnc.*:${vnc_display}( |$)" 2>/dev/null || true
     rm -f "/tmp/.X11-unix/X${vnc_display}" "/tmp/.X${vnc_display}-lock" 2>/dev/null || true
 
     # Build BASE_PATH for the container
