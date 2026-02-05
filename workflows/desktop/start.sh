@@ -326,8 +326,8 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
         # KasmVNC needs xstartup and user setup
         # Create xstartup for desktop environment detection (prefer Cinnamon, fallback to XFCE)
         XSTARTUP_PATH="${VNC_HOME}/.vnc/xstartup"
-        if ! [ -f "${XSTARTUP_PATH}" ]; then
-            cat > "${XSTARTUP_PATH}" <<'KASMEOF'
+        # Always write xstartup to ensure latest config is used
+        cat > "${XSTARTUP_PATH}" <<'KASMEOF'
 #!/bin/sh
 set -eu
 
@@ -427,9 +427,8 @@ kde)
     ;;
 esac
 KASMEOF
-            chmod 0755 "${XSTARTUP_PATH}"
-            echo "Kasm xstartup wrapper installed at ${XSTARTUP_PATH}"
-        fi
+        chmod 0755 "${XSTARTUP_PATH}"
+        echo "Kasm xstartup installed at ${XSTARTUP_PATH}"
 
         # FIXME: REMOVE THIS CODE WHEN ROCKY 9 IMAGE IS UPDATED!
         # Disable KasmVNC's interactive desktop selector script
