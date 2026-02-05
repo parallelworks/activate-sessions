@@ -315,16 +315,19 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
     echo "Display: ${DISPLAY}"
 
     # Start native VNC based on type
-    mkdir -p ${HOME}/.vnc
+    # Use temp HOME to avoid issues with network home directories
+    VNC_HOME="/tmp/${USER}-vnchome"
+    mkdir -p "${VNC_HOME}/.vnc"
     echo "Starting native VNC server on display ${DISPLAY}..."
+    echo "VNC HOME: ${VNC_HOME}"
 
     if [[ "${service_vnc_type}" == "KasmVNC" ]]; then
         # KasmVNC with websocket
-        ${service_vnc_exec} ${DISPLAY} -websocketPort ${kasm_port} &
+        HOME="${VNC_HOME}" ${service_vnc_exec} ${DISPLAY} -websocketPort ${kasm_port} &
         vnc_pid=$!
     else
         # TigerVNC or TurboVNC
-        ${service_vnc_exec} ${DISPLAY} &
+        HOME="${VNC_HOME}" ${service_vnc_exec} ${DISPLAY} &
         vnc_pid=$!
     fi
 
