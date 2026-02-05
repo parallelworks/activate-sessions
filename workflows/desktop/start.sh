@@ -411,19 +411,31 @@ EOF
 
         # KasmVNC with websocket - use disableBasicAuth so proxy can connect
         echo "Starting KasmVNC with websocket port ${kasm_port}..."
-        # Save original HOME and run vncserver synchronously (it daemonizes itself)
-        ORIGINAL_HOME="${HOME}"
-        export HOME="${VNC_HOME}"
-        # Use here-string to avoid pipe issues with set -o pipefail
-        # || true prevents set -e from exiting on non-zero
-        ${service_vnc_exec} ${DISPLAY} \
-            -disableBasicAuth \
-            -xstartup "${XSTARTUP_PATH}" \
-            -websocketPort ${kasm_port} \
-            -rfbport ${displayPort} <<< "2" || true
-        vnc_exit=$?
-        echo "DEBUG: vncserver exited with code ${vnc_exit}"
-        export HOME="${ORIGINAL_HOME}"
+
+        # Create a wrapper script to run vncserver in isolation
+        # (vncserver seems to affect the parent shell somehow)
+        VNC_WRAPPER="/tmp/vnc_wrapper_$$.sh"
+        cat > "${VNC_WRAPPER}" << VNCWRAPPER
+#!/bin/bash
+export HOME="${VNC_HOME}"
+echo "2" | ${service_vnc_exec} ${DISPLAY} \\
+    -disableBasicAuth \\
+    -xstartup "${XSTARTUP_PATH}" \\
+    -websocketPort ${kasm_port} \\
+    -rfbport ${displayPort}
+VNCWRAPPER
+        chmod +x "${VNC_WRAPPER}"
+
+        # Run wrapper detached with nohup
+        nohup "${VNC_WRAPPER}" > /tmp/vnc_startup_$$.log 2>&1 &
+        vnc_wrapper_pid=$!
+        echo "DEBUG: VNC wrapper started with PID ${vnc_wrapper_pid}"
+
+        # Wait briefly for vncserver to start
+        sleep 5
+        echo "DEBUG: VNC startup log:"
+        cat /tmp/vnc_startup_$$.log 2>/dev/null || true
+
         vnc_pid=""  # vncserver daemonizes, track via vncserver -kill later
     else
         # TigerVNC or TurboVNC - create basic xstartup
