@@ -242,8 +242,18 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
     echo "VNC HOME: ${VNC_HOME}"
 
     # Read kasmproxy settings
-    kasmproxy_path=$(cat "${JOB_DIR}/KASMPROXY_CONTAINER_PATH" 2>/dev/null || echo "/mnt/data/containers/kasmproxy.sqsh")
+    kasmproxy_runtime=$(cat "${JOB_DIR}/KASMPROXY_RUNTIME" 2>/dev/null || echo "enroot")
     kasm_port=$(cat "${JOB_DIR}/KASMPROXY_KASM_PORT" 2>/dev/null || echo "8443")
+
+    echo "KasmProxy runtime: ${kasmproxy_runtime}"
+    echo "KasmVNC port: ${kasm_port}"
+
+    # Read container path based on runtime
+    if [[ "${kasmproxy_runtime}" == "singularity" ]]; then
+        kasmproxy_path=$(cat "${JOB_DIR}/KASMPROXY_SINGULARITY_PATH" 2>/dev/null || echo "/mnt/data/containers/kasmproxy.sif")
+    else
+        kasmproxy_path=$(cat "${JOB_DIR}/KASMPROXY_ENROOT_PATH" 2>/dev/null || echo "/mnt/data/containers/kasmproxy.sqsh")
+    fi
 
     # Verify kasmproxy container exists
     if [ ! -f "${kasmproxy_path}" ]; then
@@ -251,7 +261,6 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
         exit 1
     fi
     echo "KasmProxy container: ${kasmproxy_path}"
-    echo "KasmVNC port: ${kasm_port}"
 
     # Get service port for nginx
     service_port=$(pw agent open-port)
@@ -703,22 +712,6 @@ EOF
     # =========================================================================
     echo "Starting KasmProxy container..."
 
-    # Start kasmproxy container via enroot (container OS now has nvidia support)
-    KASMPROXY_CONTAINER_NAME="kasmproxy"
-
-    echo "DEBUG: About to check/create container..."
-
-    # Remove old container and recreate fresh to avoid stale state
-    echo "Removing any existing kasmproxy container..."
-    enroot remove -f "${KASMPROXY_CONTAINER_NAME}" 2>/dev/null || true
-
-    echo "Creating fresh kasmproxy container instance..."
-    enroot create --force --name "${KASMPROXY_CONTAINER_NAME}" "${kasmproxy_path}" || {
-        echo "ERROR: Failed to create container"
-        exit 1
-    }
-    echo "Container created successfully"
-
     # Create a wrapper script that sets env vars and runs nginx directly
     # (avoids the pkill/killall in the container script that terminates enroot)
     PROXY_WRAPPER="/tmp/kasmproxy_wrapper_$$.sh"
@@ -832,18 +825,54 @@ WRAPPER_EOF
     echo "BASE_PATH: ${BASE_PATH}"
     echo "VNC Display: ${DISPLAY}"
     echo "VNC Type: ${service_vnc_type}"
+    echo "KasmProxy Runtime: ${kasmproxy_runtime}"
     echo "=========================================="
 
-    # Start enroot in FOREGROUND (blocking) - script waits here
-    echo "Starting kasmproxy container via enroot (foreground)..."
-    echo "Command: enroot start --rw -m ${PROXY_WRAPPER}:/run_proxy.sh -e KASM_HOST=${KASM_HOST_IP} -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} ${KASMPROXY_CONTAINER_NAME} /run_proxy.sh"
-    enroot start --rw \
-        -m "${PROXY_WRAPPER}:/run_proxy.sh" \
-        -e "KASM_HOST=${KASM_HOST_IP}" \
-        -e KASM_PORT=${kasm_port} \
-        -e NGINX_PORT=${service_port} \
-        -e "BASE_PATH=${BASE_PATH}" \
-        "${KASMPROXY_CONTAINER_NAME}" /run_proxy.sh
+    # Start proxy container based on runtime
+    if [[ "${kasmproxy_runtime}" == "singularity" ]]; then
+        # =====================================================================
+        # Singularity Runtime
+        # =====================================================================
+        echo "Starting kasmproxy container via Singularity (foreground)..."
+        echo "Container: ${kasmproxy_path}"
+
+        singularity run \
+            --bind "${PROXY_WRAPPER}:/run_proxy.sh" \
+            --env "KASM_HOST=${KASM_HOST_IP}" \
+            --env "KASM_PORT=${kasm_port}" \
+            --env "NGINX_PORT=${service_port}" \
+            --env "BASE_PATH=${BASE_PATH}" \
+            "${kasmproxy_path}" /run_proxy.sh
+    else
+        # =====================================================================
+        # Enroot Runtime (default)
+        # =====================================================================
+        KASMPROXY_CONTAINER_NAME="kasmproxy"
+
+        echo "DEBUG: About to check/create container..."
+
+        # Remove old container and recreate fresh to avoid stale state
+        echo "Removing any existing kasmproxy container..."
+        enroot remove -f "${KASMPROXY_CONTAINER_NAME}" 2>/dev/null || true
+
+        echo "Creating fresh kasmproxy container instance..."
+        enroot create --force --name "${KASMPROXY_CONTAINER_NAME}" "${kasmproxy_path}" || {
+            echo "ERROR: Failed to create container"
+            exit 1
+        }
+        echo "Container created successfully"
+
+        # Start enroot in FOREGROUND (blocking) - script waits here
+        echo "Starting kasmproxy container via enroot (foreground)..."
+        echo "Command: enroot start --rw -m ${PROXY_WRAPPER}:/run_proxy.sh -e KASM_HOST=${KASM_HOST_IP} -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} ${KASMPROXY_CONTAINER_NAME} /run_proxy.sh"
+        enroot start --rw \
+            -m "${PROXY_WRAPPER}:/run_proxy.sh" \
+            -e "KASM_HOST=${KASM_HOST_IP}" \
+            -e KASM_PORT=${kasm_port} \
+            -e NGINX_PORT=${service_port} \
+            -e "BASE_PATH=${BASE_PATH}" \
+            "${KASMPROXY_CONTAINER_NAME}" /run_proxy.sh
+    fi
 
     echo "KasmProxy container exited"
 

@@ -193,14 +193,24 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
 elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
     echo "KasmProxy mode: native VNC + containerized proxy"
 
-    # Write kasmproxy settings for start.sh
-    kasmproxy_path="${KASMPROXY_CONTAINER_PATH:-/mnt/data/containers/kasmproxy.sqsh}"
+    # Determine container runtime (default to enroot for backward compatibility)
+    kasmproxy_runtime="${KASMPROXY_RUNTIME:-enroot}"
     kasm_port="${KASMPROXY_KASM_PORT:-8443}"
 
-    echo "${kasmproxy_path}" > "${JOB_DIR}/KASMPROXY_CONTAINER_PATH"
+    echo "${kasmproxy_runtime}" > "${JOB_DIR}/KASMPROXY_RUNTIME"
     echo "${kasm_port}" > "${JOB_DIR}/KASMPROXY_KASM_PORT"
-    echo "KasmProxy container: ${kasmproxy_path}"
+    echo "KasmProxy runtime: ${kasmproxy_runtime}"
     echo "KasmVNC port: ${kasm_port}"
+
+    if [[ "${kasmproxy_runtime}" == "singularity" ]]; then
+        kasmproxy_path="${KASMPROXY_SINGULARITY_PATH:-/mnt/data/containers/kasmproxy.sif}"
+        echo "${kasmproxy_path}" > "${JOB_DIR}/KASMPROXY_SINGULARITY_PATH"
+        echo "KasmProxy Singularity container: ${kasmproxy_path}"
+    else
+        kasmproxy_path="${KASMPROXY_ENROOT_PATH:-/mnt/data/containers/kasmproxy.sqsh}"
+        echo "${kasmproxy_path}" > "${JOB_DIR}/KASMPROXY_ENROOT_PATH"
+        echo "KasmProxy Enroot container: ${kasmproxy_path}"
+    fi
 
     # Build slug (same as container mode - no password needed)
     if [ -z "${PW_PLATFORM_HOST}" ]; then
