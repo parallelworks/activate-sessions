@@ -781,6 +781,29 @@ EOF
             sudo chmod +x /usr/lib/kasmvncserver/select-de.sh
         fi
 
+        # Generate self-signed SSL certificate for KasmVNC (system snakeoil certs may not exist)
+        KASM_SSL_DIR="${VNC_HOME}/.vnc/ssl"
+        mkdir -p "${KASM_SSL_DIR}"
+        if [ ! -f "${KASM_SSL_DIR}/cert.pem" ] || [ ! -f "${KASM_SSL_DIR}/key.pem" ]; then
+            echo "Generating self-signed SSL certificate for KasmVNC..."
+            openssl req -x509 -nodes -newkey rsa:2048 \
+                -keyout "${KASM_SSL_DIR}/key.pem" \
+                -out "${KASM_SSL_DIR}/cert.pem" \
+                -days 3650 -subj '/CN=localhost' 2>/dev/null
+        fi
+
+        # Pre-create kasmvnc.yaml to set SSL cert paths and avoid interactive prompts
+        cat > "${VNC_HOME}/.vnc/kasmvnc.yaml" << YAML_EOF
+network:
+  ssl:
+    pem_certificate: ${KASM_SSL_DIR}/cert.pem
+    pem_key: ${KASM_SSL_DIR}/key.pem
+    require_ssl: true
+YAML_EOF
+
+        # Pre-create .Xauthority to suppress xauth warnings
+        touch "${VNC_HOME}/.Xauthority"
+
         # KasmVNC with websocket - use disableBasicAuth so proxy can connect
         echo "Starting KasmVNC with websocket port ${kasm_port}..."
         # Run vncserver backgrounded - it will daemonize anyway
@@ -1497,6 +1520,26 @@ detect_desktop_env() {
 KASMEOF
         chmod 0755 "${XSTARTUP_PATH}"
       fi
+
+      # Generate self-signed SSL certificate for KasmVNC (system snakeoil certs may not exist)
+      KASM_SSL_DIR="${HOME}/.vnc/ssl"
+      mkdir -p "${KASM_SSL_DIR}"
+      if [ ! -f "${KASM_SSL_DIR}/cert.pem" ] || [ ! -f "${KASM_SSL_DIR}/key.pem" ]; then
+          echo "Generating self-signed SSL certificate for KasmVNC..."
+          openssl req -x509 -nodes -newkey rsa:2048 \
+              -keyout "${KASM_SSL_DIR}/key.pem" \
+              -out "${KASM_SSL_DIR}/cert.pem" \
+              -days 3650 -subj '/CN=localhost' 2>/dev/null
+      fi
+
+      # Write kasmvnc.yaml config to set SSL cert paths (avoids missing snakeoil cert error)
+      cat > "${HOME}/.vnc/kasmvnc.yaml" << YAML_EOF
+network:
+  ssl:
+    pem_certificate: ${KASM_SSL_DIR}/cert.pem
+    pem_key: ${KASM_SSL_DIR}/key.pem
+    require_ssl: true
+YAML_EOF
 
       # Start KasmVNC (serves HTTPS on kasmvnc_port)
       vncserver_cmd="${service_vnc_exec} ${DISPLAY} -disableBasicAuth \
