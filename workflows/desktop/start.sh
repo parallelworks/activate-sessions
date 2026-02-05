@@ -451,32 +451,14 @@ EOF
         echo "KasmProxy container instance already exists"
     fi
 
-    # Start kasmproxy container (disable NVIDIA - not needed for proxy)
-    # Create empty hook directory to skip all hooks for this container
-    EMPTY_HOOK_DIR="/tmp/${USER}-enroot-nohooks"
-    mkdir -p "${EMPTY_HOOK_DIR}"
-
-    # Remove existing container and recreate without nvidia hooks
-    KASMPROXY_CONTAINER_NAME="kasmproxy-nongpu"
-    if enroot list 2>/dev/null | grep -q "^${KASMPROXY_CONTAINER_NAME}$"; then
-        echo "Removing existing kasmproxy container..."
-        enroot remove "${KASMPROXY_CONTAINER_NAME}" 2>/dev/null || true
-    fi
-
-    echo "Creating kasmproxy container (ignoring nvidia hook errors)..."
-    ENROOT_HOOK_PATH="${EMPTY_HOOK_DIR}" enroot create --name "${KASMPROXY_CONTAINER_NAME}" "${kasmproxy_path}" 2>&1 || true
-
-    echo "Command: enroot start --rw -e KASM_HOST=localhost -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} ${KASMPROXY_CONTAINER_NAME} /usr/local/bin/run_nginx_proxy.sh"
-    # Run enroot in subshell, ignore nvidia hook errors (exit code 1 from hook is not fatal)
-    (
-        set +e
-        enroot start --rw \
-            -e KASM_HOST=localhost \
-            -e KASM_PORT=${kasm_port} \
-            -e NGINX_PORT=${service_port} \
-            -e BASE_PATH="${BASE_PATH}" \
-            "${KASMPROXY_CONTAINER_NAME}" /usr/local/bin/run_nginx_proxy.sh
-    ) &
+    # Start kasmproxy container via srun (pyxis handles nvidia better)
+    echo "Starting kasmproxy container via srun..."
+    echo "Command: srun --overlap --gpus=0 --container-image=${kasmproxy_path} --container-env=KASM_HOST=localhost,KASM_PORT=${kasm_port},NGINX_PORT=${service_port},BASE_PATH=${BASE_PATH} /usr/local/bin/run_nginx_proxy.sh"
+    srun --overlap \
+        --gpus=0 \
+        --container-image="${kasmproxy_path}" \
+        --container-env="KASM_HOST=localhost,KASM_PORT=${kasm_port},NGINX_PORT=${service_port},BASE_PATH=${BASE_PATH}" \
+        /usr/local/bin/run_nginx_proxy.sh &
     kasmproxy_pid=$!
     echo "KasmProxy container started with PID ${kasmproxy_pid}"
 
