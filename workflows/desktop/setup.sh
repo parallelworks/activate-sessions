@@ -306,6 +306,14 @@ else
 fi
 
 # =============================================================================
+# Write startup command if provided
+# =============================================================================
+if [ -n "${STARTUP_COMMAND:-}" ]; then
+    echo "${STARTUP_COMMAND}" > "${JOB_DIR}/STARTUP_COMMAND"
+    echo "Startup command: ${STARTUP_COMMAND}"
+fi
+
+# =============================================================================
 # Write setup complete marker to job directory
 # =============================================================================
 touch "${JOB_DIR}/SETUP_COMPLETE"

@@ -332,13 +332,25 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
 set -eu
 
 # Reset HOME to user's real home directory (not the temp VNC home)
-# Get real home from passwd database
+# But preserve XAUTHORITY so X authentication still works
+VNC_HOME_SAVED="$HOME"
 REAL_HOME=$(getent passwd "$(whoami)" | cut -d: -f6)
 if [ -n "$REAL_HOME" ] && [ -d "$REAL_HOME" ]; then
+    # Keep XAUTHORITY pointing to VNC home where vncserver created it
+    export XAUTHORITY="${VNC_HOME_SAVED}/.Xauthority"
     export HOME="$REAL_HOME"
-    echo "HOME reset to: $HOME"
+    echo "HOME reset to: $HOME (XAUTHORITY: $XAUTHORITY)"
     cd "$HOME" 2>/dev/null || true
 fi
+
+# Run startup command if specified (passed via STARTUP_COMMAND env var)
+run_startup_command() {
+    if [ -n "${STARTUP_COMMAND:-}" ]; then
+        echo "Running startup command: ${STARTUP_COMMAND}"
+        sleep 3  # Wait for desktop to fully initialize
+        eval "${STARTUP_COMMAND}" &
+    fi
+}
 
 detect_desktop_env() {
     if command -v cinnamon-session >/dev/null 2>&1; then
@@ -421,8 +433,8 @@ kde)
     ;;
 *)
     # Safe fallback to XFCE (works well with KasmVNC)
-    # Configure appearance before starting
-    (sleep 2 && configure_xfce_appearance) &
+    # Configure appearance and run startup command after starting
+    (sleep 2 && configure_xfce_appearance && run_startup_command) &
     exec xfce4-session
     ;;
 esac
