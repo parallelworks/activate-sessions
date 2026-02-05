@@ -440,15 +440,43 @@ disable_screen_lock() {
     # Use VNC_HOME_SAVED for autostart overrides (where XFCE reads them)
     local config_home="${VNC_HOME_SAVED:-$HOME}"
     mkdir -p "${config_home}/.config/autostart"
+    mkdir -p "${config_home}/.config/xfce4/xfconf/xfce-perchannel-xml"
 
     # Also create in real home in case XFCE uses that
     local real_home=$(getent passwd "$(whoami)" | cut -d: -f6)
     if [ -n "$real_home" ] && [ -d "$real_home" ]; then
         mkdir -p "${real_home}/.config/autostart"
+        mkdir -p "${real_home}/.config/xfce4/xfconf/xfce-perchannel-xml"
+        mkdir -p "${real_home}/.cache/sessions"
     fi
 
+    # Clear XFCE saved sessions to prevent restoring screen lockers
+    echo "Clearing saved XFCE sessions..."
+    rm -rf "${config_home}/.cache/sessions/"* 2>/dev/null || true
+    rm -rf "${real_home}/.cache/sessions/"* 2>/dev/null || true
+
+    # Disable XFCE session saving/restore
+    for dir in "${config_home}/.config/xfce4/xfconf/xfce-perchannel-xml" "${real_home}/.config/xfce4/xfconf/xfce-perchannel-xml"; do
+        [ -d "$dir" ] || continue
+        cat > "${dir}/xfce4-session.xml" << 'XFCE_SESSION_EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfce4-session" version="1.0">
+  <property name="general" type="empty">
+    <property name="LockScreen" type="bool" value="false"/>
+    <property name="AutoLock" type="bool" value="false"/>
+    <property name="SaveOnExit" type="bool" value="false"/>
+  </property>
+  <property name="sessions" type="empty">
+    <property name="Failsafe" type="empty">
+      <property name="IsFailsafe" type="bool" value="true"/>
+    </property>
+  </property>
+</channel>
+XFCE_SESSION_EOF
+    done
+
     # List of screen lockers to disable
-    local lockers="light-locker xfce4-screensaver xscreensaver gnome-screensaver org.gnome.ScreenSaver xautolock"
+    local lockers="light-locker xfce4-screensaver xscreensaver gnome-screensaver org.gnome.ScreenSaver xautolock cinnamon-screensaver mate-screensaver"
 
     # Create autostart override files with Hidden=true in both locations
     for locker in $lockers; do
@@ -465,7 +493,7 @@ AUTOSTART_EOF
     rm -f "${config_home}/.xscreensaver" "${real_home}/.xscreensaver" 2>/dev/null || true
 
     # Kill any running screen lockers immediately
-    killall -9 light-locker xfce4-screensaver xscreensaver gnome-screensaver xautolock 2>/dev/null || true
+    killall -9 light-locker xfce4-screensaver xscreensaver gnome-screensaver xautolock cinnamon-screensaver mate-screensaver 2>/dev/null || true
 
     # Disable via xfconf (create channel files before xfce starts)
     if command -v xfconf-query >/dev/null 2>&1; then
@@ -514,14 +542,20 @@ AUTOSTART_EOF
         xset -dpms 2>/dev/null || true
     fi
 
-    # Start aggressive watchdog - kill screen lockers every 10 seconds
+    # Start aggressive watchdog - kill screen lockers every 5 seconds
     (
+        sleep 5
         while true; do
-            sleep 10
             # Kill all known screen lockers
-            killall -9 light-locker xfce4-screensaver xscreensaver gnome-screensaver xautolock 2>/dev/null || true
+            for proc in light-locker xfce4-screensaver xscreensaver gnome-screensaver xautolock cinnamon-screensaver mate-screensaver; do
+                pkill -9 -f "$proc" 2>/dev/null || true
+            done
             # Re-apply xset settings
             xset s off s noblank s 0 0 -dpms 2>/dev/null || true
+            # Re-apply xfconf settings
+            xfconf-query -c xfce4-screensaver -p /lock/enabled -s false 2>/dev/null || true
+            xfconf-query -c xfce4-screensaver -p /saver/enabled -s false 2>/dev/null || true
+            sleep 5
         done
     ) &
     echo "Screen lock watchdog started (PID: $!)"
