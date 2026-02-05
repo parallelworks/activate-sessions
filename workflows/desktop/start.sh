@@ -230,6 +230,521 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     wait ${kasmvnc_container_pid}
 
 # =============================================================================
+# KasmProxy Mode (native VNC + containerized proxy)
+# =============================================================================
+elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
+    echo "Starting KasmProxy Mode..."
+    echo "Native VNC + containerized proxy"
+
+    # Set up temp home directory early to avoid network filesystem issues
+    VNC_HOME="/tmp/${USER}-vnchome"
+    mkdir -p "${VNC_HOME}/.vnc"
+    echo "VNC HOME: ${VNC_HOME}"
+
+    # Read kasmproxy settings
+    kasmproxy_path=$(cat "${JOB_DIR}/KASMPROXY_CONTAINER_PATH" 2>/dev/null || echo "/mnt/data/containers/kasmproxy.sqsh")
+    kasm_port=$(cat "${JOB_DIR}/KASMPROXY_KASM_PORT" 2>/dev/null || echo "8443")
+
+    # Verify kasmproxy container exists
+    if [ ! -f "${kasmproxy_path}" ]; then
+        echo "ERROR: KasmProxy container not found at ${kasmproxy_path}" >&2
+        exit 1
+    fi
+    echo "KasmProxy container: ${kasmproxy_path}"
+    echo "KasmVNC port: ${kasm_port}"
+
+    # Get service port for nginx
+    service_port=$(pw agent open-port)
+    if [ -z "${service_port}" ]; then
+        echo "ERROR: Failed to allocate service port" >&2
+        exit 1
+    fi
+    echo "Service port: ${service_port}"
+
+    # Build BASE_PATH
+    BASE_PATH="/me/session/${resource_user}/${PW_SESSION_NAME}/"
+    echo "BASE_PATH: ${BASE_PATH}"
+
+    # =========================================================================
+    # Step 1: Detect and start native VNC
+    # =========================================================================
+    echo "Detecting native VNC server..."
+
+    # Try to find vncserver in PATH (check multiple names)
+    service_vnc_exec=""
+    for vnc_cmd in vncserver kasmvncserver tigervncserver turbovncserver; do
+        if which ${vnc_cmd} >/dev/null 2>&1; then
+            service_vnc_exec=$(which ${vnc_cmd})
+            echo "Found VNC command: ${service_vnc_exec}"
+            break
+        fi
+    done
+
+    # Debug: show PATH if not found
+    if [ -z "${service_vnc_exec}" ]; then
+        echo "DEBUG: PATH=${PATH}"
+        echo "DEBUG: Checking common locations..."
+        for loc in /usr/bin/vncserver /usr/local/bin/vncserver /opt/TurboVNC/bin/vncserver; do
+            if [ -x "$loc" ]; then
+                service_vnc_exec="$loc"
+                echo "Found VNC at: ${service_vnc_exec}"
+                break
+            fi
+        done
+    fi
+
+    # Detect VNC type
+    service_vnc_type=""
+    if [ -n "${service_vnc_exec}" ] && [ -x "${service_vnc_exec}" ]; then
+        service_vnc_type=$(${service_vnc_exec} -list 2>/dev/null | grep -oP '(TigerVNC|TurboVNC|KasmVNC)' || echo "")
+        # Fallback: check binary name
+        if [ -z "${service_vnc_type}" ]; then
+            case "${service_vnc_exec}" in
+                *kasmvnc*) service_vnc_type="KasmVNC" ;;
+                *tigervnc*) service_vnc_type="TigerVNC" ;;
+                *turbovnc*) service_vnc_type="TurboVNC" ;;
+            esac
+        fi
+    fi
+
+    if [ -z "${service_vnc_type}" ]; then
+        echo "ERROR: No native VNC server found (kasmvncserver, tigervnc, or turbovnc required)" >&2
+        echo "DEBUG: service_vnc_exec='${service_vnc_exec}'"
+        exit 1
+    fi
+
+    echo "Detected VNC: ${service_vnc_type}"
+
+    # Find available display
+    find_available_display_kasmproxy() {
+        local minPort=5901
+        local maxPort=5999
+
+        for port in $(seq ${minPort} ${maxPort} | shuf); do
+            out=$(netstat -aln 2>/dev/null | grep LISTEN | grep ${port} || true)
+            displayNumber=${port: -2}
+            XdisplayNumber=$(echo ${displayNumber} | sed 's/^0*//')
+
+            if [ -z "${out}" ] && ! [ -e /tmp/.X11-unix/X${XdisplayNumber} ] 2>/dev/null && ! [ -e /tmp/.X${XdisplayNumber}-lock ] 2>/dev/null; then
+                portFile=/tmp/${port}.port.used
+                if ! [ -f "${portFile}" ]; then
+                    touch ${portFile}
+                    echo "${port}"
+                    return 0
+                fi
+            fi
+        done
+        return 1
+    }
+
+    displayPort=$(find_available_display_kasmproxy)
+    if [ -z "${displayPort}" ]; then
+        echo "ERROR: No available display port found" >&2
+        exit 1
+    fi
+
+    displayNumber=${displayPort: -2}
+    DISPLAY=:$(echo ${displayNumber} | sed 's/^0*//')
+    XdisplayNumber=$(echo ${displayNumber} | sed 's/^0*//')
+    echo "Display: ${DISPLAY}"
+
+    # Start native VNC based on type
+    echo "Starting native VNC server on display ${DISPLAY}..."
+
+    if [[ "${service_vnc_type}" == "KasmVNC" ]]; then
+        # KasmVNC needs xstartup and user setup
+        # Create xstartup for desktop environment detection (prefer Cinnamon, fallback to XFCE)
+        XSTARTUP_PATH="${VNC_HOME}/.vnc/xstartup"
+
+        # Write startup command to a file that xstartup can read
+        STARTUP_CMD_FILE="${VNC_HOME}/.startup_command"
+        if [ -f "${JOB_DIR}/STARTUP_COMMAND" ]; then
+            cp "${JOB_DIR}/STARTUP_COMMAND" "${STARTUP_CMD_FILE}"
+            echo "Startup command file: ${STARTUP_CMD_FILE}"
+            echo "Command: $(cat ${STARTUP_CMD_FILE})"
+        else
+            rm -f "${STARTUP_CMD_FILE}" 2>/dev/null || true
+        fi
+
+        # Always write xstartup to ensure latest config is used
+        cat > "${XSTARTUP_PATH}" <<'KASMEOF'
+#!/bin/sh
+set -eu
+
+# Reset HOME to user's real home directory (not the temp VNC home)
+# But preserve XAUTHORITY so X authentication still works
+VNC_HOME_SAVED="$HOME"
+REAL_HOME=$(getent passwd "$(whoami)" | cut -d: -f6)
+if [ -n "$REAL_HOME" ] && [ -d "$REAL_HOME" ]; then
+    # Keep XAUTHORITY pointing to VNC home where vncserver created it
+    export XAUTHORITY="${VNC_HOME_SAVED}/.Xauthority"
+    export HOME="$REAL_HOME"
+    echo "HOME reset to: $HOME (XAUTHORITY: $XAUTHORITY)"
+    cd "$HOME" 2>/dev/null || true
+fi
+
+# Run startup command if specified (read from file written by start.sh)
+run_startup_command() {
+    # VNC_HOME_SAVED contains the temp VNC home where start.sh wrote the file
+    STARTUP_CMD_FILE="${VNC_HOME_SAVED}/.startup_command"
+    if [ -f "${STARTUP_CMD_FILE}" ]; then
+        STARTUP_COMMAND=$(cat "${STARTUP_CMD_FILE}")
+        if [ -n "${STARTUP_COMMAND}" ]; then
+            echo "Running startup command: ${STARTUP_COMMAND}"
+            sleep 3  # Wait for desktop to fully initialize
+            eval "${STARTUP_COMMAND}" &
+        fi
+    fi
+}
+
+detect_desktop_env() {
+    # Prefer XFCE - it works best with KasmVNC
+    if command -v xfce4-session >/dev/null 2>&1; then
+        echo "xfce"
+    elif command -v cinnamon-session >/dev/null 2>&1; then
+        echo "cinnamon"
+    elif command -v mate-session >/dev/null 2>&1; then
+        echo "mate"
+    elif command -v startlxde >/dev/null 2>&1; then
+        echo "lxde"
+    elif command -v lxqt-session >/dev/null 2>&1; then
+        echo "lxqt"
+    elif command -v startplasma-x11 >/dev/null 2>&1 || command -v plasmashell >/dev/null 2>&1; then
+        echo "kde"
+    elif command -v gnome-session >/dev/null 2>&1; then
+        # GNOME last - often has issues with VNC
+        echo "gnome"
+    else
+        echo "none"
+    fi
+}
+
+de="$(detect_desktop_env)"
+echo "*** running $de desktop ***"
+
+# Configure XFCE appearance (if xfconf-query available)
+configure_xfce_appearance() {
+    if ! command -v xfconf-query >/dev/null 2>&1; then
+        echo "xfconf-query not found, skipping appearance config"
+        return 0
+    fi
+
+    echo "Configuring XFCE appearance..."
+
+    # Wait for xfce4-session to fully initialize
+    for i in 1 2 3 4 5; do
+        if xfconf-query -c xfce4-session -l >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+    done
+
+    # Set GTK theme (Adwaita-dark or fallback to Greybird-dark)
+    for theme in "Adwaita-dark" "Greybird-dark" "Arc-Dark"; do
+        if [ -d "/usr/share/themes/${theme}" ] || [ -d "$HOME/.themes/${theme}" ]; then
+            xfconf-query -c xsettings -p /Net/ThemeName -s "${theme}" --create -t string 2>/dev/null && break
+        fi
+    done
+
+    # Set window manager theme
+    for theme in "Adwaita-dark" "Greybird-dark" "Arc-Dark"; do
+        if [ -d "/usr/share/themes/${theme}/xfwm4" ] || [ -d "$HOME/.themes/${theme}/xfwm4" ]; then
+            xfconf-query -c xfwm4 -p /general/theme -s "${theme}" --create -t string 2>/dev/null && break
+        fi
+    done
+
+    # Set icon theme
+    xfconf-query -c xsettings -p /Net/IconThemeName -s "Adwaita" --create -t string 2>/dev/null || true
+
+    # Set solid black background - need to configure all detected monitors
+    # First, list all backdrop properties to find the actual monitor paths
+    monitors=$(xfconf-query -c xfce4-desktop -l 2>/dev/null | grep -E '/backdrop/screen.*/monitor.*/workspace.*' | sed 's|/[^/]*$||' | sort -u)
+
+    if [ -n "$monitors" ]; then
+        for monitor_path in $monitors; do
+            echo "Configuring backdrop: ${monitor_path}"
+            # image-style: 0=None (solid color), 1=Centered, 2=Tiled, 3=Stretched, 4=Scaled, 5=Zoomed
+            xfconf-query -c xfce4-desktop -p "${monitor_path}/image-style" -s 0 --create -t int 2>/dev/null || true
+            # color-style: 0=Solid, 1=Horizontal gradient, 2=Vertical gradient, 3=Transparent
+            xfconf-query -c xfce4-desktop -p "${monitor_path}/color-style" -s 0 --create -t int 2>/dev/null || true
+            # rgba1: primary color (black = 0,0,0,1)
+            xfconf-query -c xfce4-desktop -p "${monitor_path}/rgba1" -s 0.0 -s 0.0 -s 0.0 -s 1.0 --create -t double -t double -t double -t double 2>/dev/null || true
+        done
+    else
+        # Fallback: try common paths
+        for path in \
+            "/backdrop/screen0/monitor0/workspace0" \
+            "/backdrop/screen0/monitorscreen/workspace0" \
+            "/backdrop/screen0/monitorVNC-0/workspace0"; do
+            xfconf-query -c xfce4-desktop -p "${path}/image-style" -s 0 --create -t int 2>/dev/null || true
+            xfconf-query -c xfce4-desktop -p "${path}/color-style" -s 0 --create -t int 2>/dev/null || true
+            xfconf-query -c xfce4-desktop -p "${path}/rgba1" -s 0.0 -s 0.0 -s 0.0 -s 1.0 --create -t double -t double -t double -t double 2>/dev/null || true
+        done
+    fi
+
+    echo "XFCE appearance configured"
+}
+
+case "$de" in
+xfce)
+    # XFCE - preferred desktop for KasmVNC
+    echo "Starting XFCE desktop environment..."
+    # Configure appearance and run startup command after desktop fully starts
+    # Need longer delay for xfdesktop to initialize and register with xfconf
+    (sleep 5 && configure_xfce_appearance && run_startup_command) &
+    exec dbus-run-session -- xfce4-session
+    ;;
+cinnamon)
+    # Clean up stale Cinnamon processes that break restarts under VNC
+    killall -q cinnamon cinnamon-session cinnamon-panel muffin nemo nemo-desktop || true
+
+    # VNC stability for Cinnamon (prevents blank desktop on second start)
+    export LIBGL_ALWAYS_SOFTWARE=1
+    export CLUTTER_BACKEND=x11
+    export GDK_BACKEND=x11
+    export QT_QPA_PLATFORM=xcb
+    export MOZ_ENABLE_WAYLAND=0
+
+    # Start Cinnamon with a scoped D-Bus session
+    exec dbus-run-session -- cinnamon-session
+    ;;
+mate)
+    exec dbus-run-session -- mate-session
+    ;;
+lxde)
+    exec startlxde
+    ;;
+gnome)
+    export XDG_CURRENT_DESKTOP=GNOME
+    export XDG_SESSION_TYPE=x11
+    export GDK_BACKEND=x11
+    export QT_QPA_PLATFORM=xcb
+    export MOZ_ENABLE_WAYLAND=0
+    exec dbus-run-session -- gnome-session --session=gnome
+    ;;
+lxqt)
+    exec lxqt-session
+    ;;
+kde)
+    exec startplasma-x11
+    ;;
+*)
+    # Safe fallback to XFCE (works well with KasmVNC)
+    echo "Unknown desktop '$de', falling back to XFCE..."
+    # Configure appearance and run startup command after desktop fully starts
+    (sleep 5 && configure_xfce_appearance && run_startup_command) &
+    exec dbus-run-session -- xfce4-session
+    ;;
+esac
+KASMEOF
+        chmod 0755 "${XSTARTUP_PATH}"
+        echo "Kasm xstartup installed at ${XSTARTUP_PATH}"
+
+        # FIXME: REMOVE THIS CODE WHEN ROCKY 9 IMAGE IS UPDATED!
+        # Disable KasmVNC's interactive desktop selector script
+        if [ -f /usr/lib/kasmvncserver/select-de.sh ]; then
+            echo "Disabling KasmVNC select-de.sh interactive prompt..."
+            sudo mv /usr/lib/kasmvncserver/select-de.sh /usr/lib/kasmvncserver/select-de.sh.bak 2>/dev/null || true
+            sudo tee /usr/lib/kasmvncserver/select-de.sh >/dev/null <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+            sudo chmod +x /usr/lib/kasmvncserver/select-de.sh
+        fi
+
+        # KasmVNC with websocket - use disableBasicAuth so proxy can connect
+        echo "Starting KasmVNC with websocket port ${kasm_port}..."
+        # Run vncserver backgrounded - it will daemonize anyway
+        # Use subshell to isolate any shell effects
+        (
+            export HOME="${VNC_HOME}"
+            echo "2" | ${service_vnc_exec} ${DISPLAY} \
+                -disableBasicAuth \
+                -xstartup "${XSTARTUP_PATH}" \
+                -websocketPort ${kasm_port} \
+                -rfbport ${displayPort}
+        ) &
+        echo "VNC server starting in background..."
+    else
+        # TigerVNC or TurboVNC - create basic xstartup
+        XSTARTUP_PATH="${VNC_HOME}/.vnc/xstartup"
+        cat > "${XSTARTUP_PATH}" <<'EOF'
+#!/bin/sh
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+/etc/X11/xinit/xinitrc
+EOF
+        chmod +x "${XSTARTUP_PATH}"
+
+        HOME="${VNC_HOME}" ${service_vnc_exec} ${DISPLAY} &
+        vnc_pid=$!
+    fi
+
+    echo "VNC server launched"
+
+    # Give VNC a moment to start
+    sleep 5
+
+    # =========================================================================
+    # Step 2: Write coordination files BEFORE starting proxy
+    # =========================================================================
+    echo "Writing coordination files to ${JOB_DIR}..."
+    hostname > "${JOB_DIR}/HOSTNAME"
+    echo "${service_port}" > "${JOB_DIR}/SESSION_PORT"
+    sync
+    touch "${JOB_DIR}/job.started"
+    echo "Coordination files written"
+
+    # =========================================================================
+    # Step 3: Start KasmProxy container
+    # =========================================================================
+    echo "Starting KasmProxy container..."
+
+    # Start kasmproxy container via enroot (container OS now has nvidia support)
+    KASMPROXY_CONTAINER_NAME="kasmproxy"
+
+    echo "DEBUG: About to check/create container..."
+
+    # Remove old container and recreate fresh to avoid stale state
+    echo "Removing any existing kasmproxy container..."
+    enroot remove -f "${KASMPROXY_CONTAINER_NAME}" 2>/dev/null || true
+
+    echo "Creating fresh kasmproxy container instance..."
+    enroot create --force --name "${KASMPROXY_CONTAINER_NAME}" "${kasmproxy_path}" || {
+        echo "ERROR: Failed to create container"
+        exit 1
+    }
+    echo "Container created successfully"
+
+    # Create a wrapper script that sets env vars and runs nginx directly
+    # (avoids the pkill/killall in the container script that terminates enroot)
+    PROXY_WRAPPER="/tmp/kasmproxy_wrapper_$$.sh"
+    cat > "${PROXY_WRAPPER}" << 'WRAPPER_EOF'
+#!/bin/bash
+set -e
+
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
+
+KASM_HOST="${KASM_HOST:-127.0.0.1}"
+KASM_PORT="${KASM_PORT:-8443}"
+NGINX_PORT="${NGINX_PORT:-8080}"
+BASE_PATH="${BASE_PATH:-/}"
+
+# Normalize base path
+[[ "$BASE_PATH" != /* ]] && BASE_PATH="/$BASE_PATH"
+[[ "$BASE_PATH" != "/" && "$BASE_PATH" == */ ]] && BASE_PATH="${BASE_PATH%/}"
+
+echo "==========================================="
+echo "  KasmProxy Starting"
+echo "==========================================="
+echo "[INFO] KasmVNC backend: ${KASM_HOST}:${KASM_PORT}"
+echo "[INFO] Nginx port: ${NGINX_PORT}"
+echo "[INFO] Base path: ${BASE_PATH}"
+
+mkdir -p /tmp/nginx_client_body /tmp/nginx_proxy /tmp/nginx_fastcgi /tmp/nginx_uwsgi /tmp/nginx_scgi
+
+# Generate nginx config
+cat > /tmp/nginx_proxy.conf << EOF
+worker_processes 1;
+pid /tmp/nginx.pid;
+error_log /tmp/nginx_error.log;
+
+events { worker_connections 1024; }
+
+http {
+    default_type application/octet-stream;
+    access_log /tmp/nginx_access.log;
+    client_body_temp_path /tmp/nginx_client_body;
+    proxy_temp_path /tmp/nginx_proxy;
+    fastcgi_temp_path /tmp/nginx_fastcgi;
+    uwsgi_temp_path /tmp/nginx_uwsgi;
+    scgi_temp_path /tmp/nginx_scgi;
+
+    map \$http_upgrade \$connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+
+    server {
+        listen ${NGINX_PORT};
+        server_name _;
+
+        location / {
+            proxy_pass https://${KASM_HOST}:${KASM_PORT}/;
+            proxy_ssl_verify off;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection \$connection_upgrade;
+            proxy_set_header Host \$host;
+            proxy_read_timeout 61s;
+            proxy_buffering off;
+        }
+EOF
+
+if [ "$BASE_PATH" != "/" ]; then
+    cat >> /tmp/nginx_proxy.conf << EOF
+
+        location = ${BASE_PATH} {
+            return 301 \$scheme://\$host\$request_uri/;
+        }
+
+        location ${BASE_PATH}/ {
+            proxy_pass https://${KASM_HOST}:${KASM_PORT}/;
+            proxy_ssl_verify off;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection \$connection_upgrade;
+            proxy_set_header Host \$host;
+            proxy_read_timeout 61s;
+            proxy_buffering off;
+        }
+EOF
+fi
+
+echo "    }
+}" >> /tmp/nginx_proxy.conf
+
+echo "[INFO] Starting nginx..."
+exec nginx -g 'daemon off;' -c /tmp/nginx_proxy.conf
+WRAPPER_EOF
+    chmod +x "${PROXY_WRAPPER}"
+
+    # Get host IP for container to connect to (localhost won't work from inside container)
+    KASM_HOST_IP=$(hostname -I | awk '{print $1}')
+    echo "Host IP for KasmVNC: ${KASM_HOST_IP}"
+
+    # Cleanup function (kill VNC on exit)
+    cleanup_kasmproxy() {
+        echo "$(date) Stopping KasmProxy mode..."
+        HOME="${VNC_HOME}" vncserver -kill ${DISPLAY} 2>/dev/null || true
+    }
+    trap cleanup_kasmproxy EXIT INT TERM
+
+    echo "=========================================="
+    echo "KasmProxy Desktop Service is RUNNING!"
+    echo "=========================================="
+    echo "HOSTNAME: $(cat ${JOB_DIR}/HOSTNAME)"
+    echo "SESSION_PORT: $(cat ${JOB_DIR}/SESSION_PORT)"
+    echo "BASE_PATH: ${BASE_PATH}"
+    echo "VNC Display: ${DISPLAY}"
+    echo "VNC Type: ${service_vnc_type}"
+    echo "=========================================="
+
+    # Start enroot in FOREGROUND (blocking) - script waits here
+    echo "Starting kasmproxy container via enroot (foreground)..."
+    echo "Command: enroot start --rw -m ${PROXY_WRAPPER}:/run_proxy.sh -e KASM_HOST=${KASM_HOST_IP} -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} ${KASMPROXY_CONTAINER_NAME} /run_proxy.sh"
+    enroot start --rw \
+        -m "${PROXY_WRAPPER}:/run_proxy.sh" \
+        -e "KASM_HOST=${KASM_HOST_IP}" \
+        -e KASM_PORT=${kasm_port} \
+        -e NGINX_PORT=${service_port} \
+        -e "BASE_PATH=${BASE_PATH}" \
+        "${KASMPROXY_CONTAINER_NAME}" /run_proxy.sh
+
+    echo "KasmProxy container exited"
+
+# =============================================================================
 # Native VNC Mode (existing behavior)
 # =============================================================================
 else
@@ -667,18 +1182,22 @@ EOF
 set -eu
 
 detect_desktop_env() {
-    if command -v cinnamon-session >/dev/null 2>&1; then
+    # Prefer XFCE - it works best with KasmVNC
+    if command -v xfce4-session >/dev/null 2>&1; then
+        echo "xfce"
+    elif command -v cinnamon-session >/dev/null 2>&1; then
         echo "cinnamon"
     elif command -v mate-session >/dev/null 2>&1; then
         echo "mate"
     elif command -v startlxde >/dev/null 2>&1; then
         echo "lxde"
-    elif command -v gnome-session >/dev/null 2>&1; then
-        echo "gnome"
     elif command -v lxqt-session >/dev/null 2>&1; then
         echo "lxqt"
     elif command -v startplasma-x11 >/dev/null 2>&1 || command -v plasmashell >/dev/null 2>&1; then
         echo "kde"
+    elif command -v gnome-session >/dev/null 2>&1; then
+        # GNOME last - often has issues with VNC
+        echo "gnome"
     else
         echo "none"
     fi
@@ -688,6 +1207,10 @@ detect_desktop_env() {
     echo "*** running $de desktop ***"
 
     case "$de" in
+    xfce)
+        # XFCE - preferred desktop for KasmVNC
+        exec dbus-run-session -- xfce4-session
+        ;;
     cinnamon)
         killall -q cinnamon cinnamon-session cinnamon-panel muffin nemo nemo-desktop 2>/dev/null || true
         export LIBGL_ALWAYS_SOFTWARE=1
@@ -698,7 +1221,7 @@ detect_desktop_env() {
         exec dbus-run-session -- cinnamon-session
         ;;
     mate)
-        exec mate-session
+        exec dbus-run-session -- mate-session
         ;;
     lxde)
         exec startlxde
@@ -718,7 +1241,8 @@ detect_desktop_env() {
         exec startplasma-x11
         ;;
     *)
-        exec startlxde
+        # Fallback to XFCE
+        exec dbus-run-session -- xfce4-session
         ;;
     esac
 KASMEOF

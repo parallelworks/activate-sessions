@@ -1,0 +1,209 @@
+# yaml-language-server: $schema=https://activate.parallel.works/workflow.schema.json
+---
+# Desktop for Coreweave - Simplified desktop workflow for Coreweave clusters
+# Pre-configured for kasmproxy mode with minimal user inputs
+
+permissions:
+  - "*"
+
+sessions:
+  session:
+    useTLS: false
+    redirect: true
+
+jobs:
+  # =============================================================================
+  # PREPROCESSING
+  # =============================================================================
+  preprocessing:
+    steps:
+      - name: Checkout service scripts
+        uses: parallelworks/checkout
+        ssh:
+          remoteHost: ${{ inputs.resource.ip }}
+        with:
+          repo: https://github.com/parallelworks/activate-sessions.git
+          branch: add-kasmproxy-mode
+          sparse_checkout:
+            - workflows/${{ inputs.workflow_dir }}
+            - utils
+
+      - name: Transfer inputs from user workspace
+        run: |
+          set -e
+          REMOTE_JOB_DIR="./pw/jobs/${PW_WORKFLOW_NAME}/${PW_JOB_NUMBER}/"
+          if [ -f inputs.sh ]; then
+            echo "export PW_PLATFORM_HOST=$PW_PLATFORM_HOST" >> inputs.sh
+            scp inputs.sh ${{ inputs.resource.ip }}:${REMOTE_JOB_DIR}
+          fi
+
+      - name: Run controller setup
+        ssh:
+          remoteHost: ${{ inputs.resource.ip }}
+        run: |
+          set -e
+          cd workflows/${{ inputs.workflow_dir }}
+          export KASMPROXY_CONTAINER_PATH="${{ inputs.desktop.kasmproxy_container_path }}"
+          export KASMPROXY_KASM_PORT="${{ inputs.desktop.kasmproxy_kasm_port }}"
+          export STARTUP_COMMAND="${{ inputs.desktop.startup_command }}"
+          export PW_SESSION_NAME="${{ sessions.session }}"
+          bash setup.sh
+
+  # =============================================================================
+  # SESSION RUNNER
+  # =============================================================================
+  session_runner:
+    needs: [preprocessing]
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Submit session script
+        early-cancel: any-job-failed
+        uses: marketplace/job_runner/v4.0
+        with:
+          resource: ${{ inputs.resource }}
+          rundir: "${PW_PARENT_JOB_DIR}"
+          scheduler: true
+          inject_markers: true
+          slurm:
+            is_disabled: false
+            partition: ${{ inputs.slurm.partition }}
+            time: ${{ inputs.slurm.time }}
+            cpus_per_task: ${{ inputs.slurm.cpus_per_task }}
+            gres: ${{ inputs.slurm.gres }}
+          use_existing_script: true
+          script_path: "${PW_PARENT_JOB_DIR}/workflows/${{ inputs.workflow_dir }}/start.sh"
+
+      - name: Notify job ended
+        early-cancel: any-job-failed
+        run: touch job.ended
+
+  # =============================================================================
+  # WAIT FOR SERVICE
+  # =============================================================================
+  wait_for_service:
+    needs: [preprocessing]
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Wait for desktop ready
+        early-cancel: any-job-failed
+        run: bash utils/wait_service.sh
+
+  # =============================================================================
+  # UPDATE SESSION
+  # =============================================================================
+  update_session:
+    needs: [preprocessing, wait_for_service]
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Get local port
+        run: |
+          local_port=$(pw agent open-port)
+          echo "local_port=${local_port}" | tee -a $OUTPUTS
+
+      - name: Update session with custom slug
+        uses: parallelworks/update-session
+        with:
+          target: ${{ inputs.resource.id }}
+          name: ${{ sessions.session }}
+          slug: ${{ needs.preprocessing.outputs.slug }}
+          remoteHost: ${{ needs.wait_for_service.outputs.HOSTNAME }}
+          remotePort: ${{ needs.wait_for_service.outputs.SESSION_PORT }}
+          local_port: ${{ needs.update_session.outputs.local_port }}
+
+  # =============================================================================
+  # COMPLETE
+  # =============================================================================
+  complete:
+    needs: [update_session]
+    steps:
+      - name: Display connection info
+        run: |
+          basepath="/me/session/${PW_USER}/${{ sessions.session }}"
+          echo "=========================================="
+          echo "Desktop Session is ready!"
+          echo "=========================================="
+          echo "  Connect via: ${PW_PLATFORM_HOST}${basepath}/"
+          echo "=========================================="
+
+"on":
+  execute:
+    inputs:
+      resource:
+        type: compute-clusters
+        label: Service host
+        include-workspace: false
+        autoselect: true
+
+      workflow_dir:
+        type: string
+        default: desktop
+        hidden: true
+
+      slurm:
+        type: group
+        label: Job Configuration
+        items:
+          partition:
+            type: slurm-partitions
+            label: Partition
+            optional: true
+            resource: ${{ inputs.resource }}
+            tooltip: Select GPU partition
+
+          cpus_per_task:
+            type: number
+            label: CPUs
+            min: 1
+            max: 256
+            default: 8
+            tooltip: Number of CPUs for the job
+
+          time:
+            label: Walltime
+            type: string
+            default: 04:00:00
+            tooltip: Maximum job duration (HH:MM:SS)
+
+          gres:
+            label: GPUs
+            type: dropdown
+            default: "gpu:1"
+            tooltip: Number of GPUs
+            options:
+              - value: "gpu:1"
+                label: "1 GPU"
+              - value: "gpu:2"
+                label: "2 GPUs"
+              - value: "gpu:4"
+                label: "4 GPUs"
+              - value: "gpu:8"
+                label: "8 GPUs"
+
+      desktop:
+        type: group
+        label: Desktop Settings
+        items:
+          vnc_mode:
+            type: string
+            default: kasmproxy
+            hidden: true
+
+          startup_command:
+            type: string
+            label: Startup Application
+            placeholder: "firefox, virtuoso, etc."
+            tooltip: Command to run after desktop starts (optional)
+            optional: true
+
+          kasmproxy_container_path:
+            type: string
+            default: "/mnt/data/containers/kasmproxy.sqsh"
+            hidden: true
+
+          kasmproxy_kasm_port:
+            type: number
+            default: 8443
+            hidden: true

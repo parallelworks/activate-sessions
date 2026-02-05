@@ -23,7 +23,7 @@ jobs:
           remoteHost: ${{ inputs.resource.ip }}
         with:
           repo: https://github.com/parallelworks/activate-sessions.git
-          branch: main
+          branch: add-kasmproxy-mode
           sparse_checkout:
             - workflows/${{ inputs.workflow_dir }}
             - utils
@@ -47,6 +47,8 @@ jobs:
           export KASM_CONTAINER_RUNTIME="${{ inputs.desktop.kasmvnc_container_runtime }}"
           export KASM_ENROOT_PATH="${{ inputs.desktop.kasmvnc_enroot_container_path }}"
           export KASM_MOUNT_PATH="${{ inputs.desktop.kasmvnc_mount_path }}"
+          export KASMPROXY_CONTAINER_PATH="${{ inputs.desktop.kasmproxy_container_path }}"
+          export KASMPROXY_KASM_PORT="${{ inputs.desktop.kasmproxy_kasm_port }}"
           export PW_SESSION_NAME="${{ sessions.session }}"
           bash setup.sh
 
@@ -299,6 +301,8 @@ jobs:
             options:
               - label: "Native (auto-detect installed VNC)"
                 value: native
+              - label: "Native VNC + KasmProxy"
+                value: kasmproxy
               - label: "KasmVNC Container"
                 value: kasmvnc_container
 
@@ -405,3 +409,18 @@ jobs:
             default: true
             tooltip: Pass --nv flag to Singularity for NVIDIA GPU support (safe on CPU-only nodes)
             hidden: true
+
+          kasmproxy_container_path:
+            type: string
+            label: KasmProxy Container Path
+            default: "/mnt/data/containers/kasmproxy.sqsh"
+            placeholder: "/mnt/data/containers/kasmproxy.sqsh"
+            tooltip: Path to the KasmProxy Enroot container (.sqsh file)
+            hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' }}
+
+          kasmproxy_kasm_port:
+            type: number
+            label: KasmVNC Port
+            default: 8443
+            tooltip: Port where native KasmVNC listens (typically 8443 for SSL)
+            hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' }}

@@ -188,6 +188,29 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     echo "slug=${slug}"  | tee -a $OUTPUTS
 
 # =============================================================================
+# KasmProxy Mode (native VNC + containerized proxy)
+# =============================================================================
+elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
+    echo "KasmProxy mode: native VNC + containerized proxy"
+
+    # Write kasmproxy settings for start.sh
+    kasmproxy_path="${KASMPROXY_CONTAINER_PATH:-/mnt/data/containers/kasmproxy.sqsh}"
+    kasm_port="${KASMPROXY_KASM_PORT:-8443}"
+
+    echo "${kasmproxy_path}" > "${JOB_DIR}/KASMPROXY_CONTAINER_PATH"
+    echo "${kasm_port}" > "${JOB_DIR}/KASMPROXY_KASM_PORT"
+    echo "KasmProxy container: ${kasmproxy_path}"
+    echo "KasmVNC port: ${kasm_port}"
+
+    # Build slug (same as container mode - no password needed)
+    if [ -z "${PW_PLATFORM_HOST}" ]; then
+        PW_PLATFORM_HOST="activate.parallel.works"
+    fi
+    basepath="/me/session/${PW_USER}/${PW_SESSION_NAME}"
+    slug="vnc.html?resize=remote&autoconnect=true&show_dot=true&path=websockify&host=${PW_PLATFORM_HOST}${basepath}/&dt=0"
+    echo "slug=${slug}" | tee -a $OUTPUTS
+
+# =============================================================================
 # Native VNC Mode (existing behavior)
 # =============================================================================
 else
@@ -283,6 +306,14 @@ else
 fi
 
 # =============================================================================
+# Write startup command if provided
+# =============================================================================
+if [ -n "${STARTUP_COMMAND:-}" ]; then
+    echo "${STARTUP_COMMAND}" > "${JOB_DIR}/STARTUP_COMMAND"
+    echo "Startup command: ${STARTUP_COMMAND}"
+fi
+
+# =============================================================================
 # Write setup complete marker to job directory
 # =============================================================================
 touch "${JOB_DIR}/SETUP_COMPLETE"
@@ -298,6 +329,9 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     else
         echo "Singularity container: $(cat ${JOB_DIR}/KASMVNC_CONTAINER_PATH 2>/dev/null || echo 'not set')"
     fi
+elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
+    echo "KasmProxy container: $(cat ${JOB_DIR}/KASMPROXY_CONTAINER_PATH 2>/dev/null || echo 'not set')"
+    echo "KasmVNC port: $(cat ${JOB_DIR}/KASMPROXY_KASM_PORT 2>/dev/null || echo '8443')"
 else
     echo "Shared resources prepared:"
     echo "  - noVNC: ${NOVNC_INSTALL_DIR}"
