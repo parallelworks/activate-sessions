@@ -43,6 +43,60 @@ NOVNC_VERSION="v1.6.0"
 SERVICE_PARENT_INSTALL_DIR="${HOME}/pw/software"
 CONTAINER_DIR="${HOME}/pw/singularity"
 
+# =============================================================================
+# Helper: Install Git LFS with fallback to direct binary download
+# =============================================================================
+install_git_lfs() {
+    if git lfs version >/dev/null 2>&1; then
+        echo "Git LFS already available: $(git lfs version)"
+        return 0
+    fi
+
+    echo "Git LFS not found, installing..."
+
+    # Try bootstrap from singularity-containers repo
+    git clone --depth 1 https://github.com/parallelworks/singularity-containers.git \
+        ~/singularity-containers-tmp 2>/dev/null || true
+    if [ -d ~/singularity-containers-tmp ]; then
+        bash ~/singularity-containers-tmp/scripts/sif_parts.sh install-lfs 2>/dev/null || true
+        rm -rf ~/singularity-containers-tmp
+    fi
+
+    # Check if bootstrap worked
+    if git lfs version >/dev/null 2>&1; then
+        echo "Git LFS installed via bootstrap: $(git lfs version)"
+        return 0
+    fi
+
+    # Fallback: download git-lfs binary directly
+    echo "Bootstrap did not install git-lfs, downloading binary directly..."
+    local lfs_version="3.5.1"
+    local arch
+    arch=$(uname -m)
+    case "${arch}" in
+        x86_64) arch="amd64" ;;
+        aarch64) arch="arm64" ;;
+    esac
+    local lfs_url="https://github.com/git-lfs/git-lfs/releases/download/v${lfs_version}/git-lfs-linux-${arch}-v${lfs_version}.tar.gz"
+    local lfs_dir="${HOME}/.local/bin"
+    mkdir -p "${lfs_dir}"
+
+    if curl -sL "${lfs_url}" | tar xz -C /tmp/ 2>/dev/null; then
+        cp "/tmp/git-lfs-${lfs_version}/git-lfs" "${lfs_dir}/"
+        chmod +x "${lfs_dir}/git-lfs"
+        export PATH="${lfs_dir}:${PATH}"
+        rm -rf "/tmp/git-lfs-${lfs_version}"
+
+        if git lfs version >/dev/null 2>&1; then
+            echo "Git LFS installed directly: $(git lfs version)"
+            return 0
+        fi
+    fi
+
+    echo "WARNING: Failed to install Git LFS" >&2
+    return 1
+}
+
 # Read VNC mode from inputs (default to native for backward compatibility)
 vnc_mode="${desktop_vnc_mode:-native}"
 echo "VNC Mode: ${vnc_mode}"
@@ -72,21 +126,7 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
 
     # Handle Singularity runtime (git_lfs source)
     elif [[ "${desktop_kasmvnc_container_source:-path}" == "git_lfs" ]]; then
-        if ! git lfs version >/dev/null 2>&1; then
-            echo "Git LFS not found, installing..."
-            git clone --depth 1 https://github.com/parallelworks/singularity-containers.git \
-                ~/singularity-containers-tmp || true
-
-            if [ -d ~/singularity-containers-tmp ]; then
-                bash ~/singularity-containers-tmp/scripts/sif_parts.sh install-lfs
-                rm -rf ~/singularity-containers-tmp
-                echo "Git LFS installed successfully"
-            else
-                echo "WARNING: Failed to install Git LFS" >&2
-            fi
-        else
-            echo "Git LFS already available: $(git lfs version)"
-        fi
+        install_git_lfs
 
         # Pull KasmVNC container via sparse checkout + Git LFS
         KASMVNC_CONTAINER_SIF="${CONTAINER_DIR}/kasmvnc.sif"
@@ -210,21 +250,7 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
             # Pull from Git LFS
             KASMPROXY_SIF="${CONTAINER_DIR}/kasmproxy.sif"
 
-            # Ensure Git LFS is available
-            if ! git lfs version >/dev/null 2>&1; then
-                echo "Git LFS not found, installing..."
-                git clone --depth 1 https://github.com/parallelworks/singularity-containers.git \
-                    ~/singularity-containers-tmp || true
-                if [ -d ~/singularity-containers-tmp ]; then
-                    bash ~/singularity-containers-tmp/scripts/sif_parts.sh install-lfs
-                    rm -rf ~/singularity-containers-tmp
-                    echo "Git LFS installed successfully"
-                else
-                    echo "WARNING: Failed to install Git LFS" >&2
-                fi
-            else
-                echo "Git LFS already available: $(git lfs version)"
-            fi
+            install_git_lfs
 
             # Pull kasmproxy container if not present or empty
             if [ ! -f "${KASMPROXY_SIF}" ] || [ ! -s "${KASMPROXY_SIF}" ]; then
@@ -311,22 +337,7 @@ else
         echo "noVNC already installed at: ${NOVNC_INSTALL_DIR}"
     fi
 
-    # Ensure Git LFS is available
-    if ! git lfs version >/dev/null 2>&1; then
-        echo "Git LFS not found, installing..."
-        git clone --depth 1 https://github.com/parallelworks/singularity-containers.git \
-            ~/singularity-containers-tmp || true
-
-        if [ -d ~/singularity-containers-tmp ]; then
-            bash ~/singularity-containers-tmp/scripts/sif_parts.sh install-lfs
-            rm -rf ~/singularity-containers-tmp
-            echo "Git LFS installed successfully"
-        else
-            echo "WARNING: Failed to install Git LFS" >&2
-        fi
-    else
-        echo "Git LFS already available: $(git lfs version)"
-    fi
+    install_git_lfs
 
     # Pull nginx container via sparse checkout + Git LFS
     if [ ! -f "${CONTAINER_DIR}/nginx.sif" ] || [ ! -s "${CONTAINER_DIR}/nginx.sif" ]; then

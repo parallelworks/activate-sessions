@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://activate.parallel.works/workflow.schema.json
 ---
-# Desktop - Interactive remote desktop session workflow
-# Supports TigerVNC, TurboVNC, KasmVNC, and Singularity containers
+# Desktop for HSP - KasmVNC container desktop with Singularity runtime
+# Pre-configured with default filesystem mounts for HSP clusters
 
 permissions:
   - "*"
@@ -9,7 +9,7 @@ permissions:
 sessions:
   session:
     useTLS: false
-    redirect: true # VNC uses redirect with custom slug for autoconnect
+    redirect: true
 
 jobs:
   # =============================================================================
@@ -44,27 +44,27 @@ jobs:
           set -e
           cd workflows/${{ inputs.workflow_dir }}
           export KASM_BUCKET_URI="${{ inputs.desktop.kasmvnc_bucket.uri }}/${{ inputs.desktop.kasmvnc_bucket_path }}"
-          export KASM_CONTAINER_RUNTIME="${{ inputs.desktop.kasmvnc_container_runtime }}"
-          export KASM_ENROOT_PATH="${{ inputs.desktop.kasmvnc_enroot_container_path }}"
-          export CONTAINER_MOUNT_PATHS="${{ inputs.desktop.container_mount_paths }}"
-          export KASMPROXY_RUNTIME="${{ inputs.desktop.kasmproxy_runtime }}"
-          export KASMPROXY_ENROOT_PATH="${{ inputs.desktop.kasmproxy_enroot_path }}"
-          export KASMPROXY_SINGULARITY_SOURCE="${{ inputs.desktop.kasmproxy_singularity_source }}"
-          export KASMPROXY_SINGULARITY_PATH="${{ inputs.desktop.kasmproxy_singularity_path }}"
-          export KASMPROXY_GIT_REPO="${{ inputs.desktop.kasmproxy_git_repo }}"
-          export KASMPROXY_GIT_PATH="${{ inputs.desktop.kasmproxy_git_path }}"
+          export KASM_CONTAINER_RUNTIME="singularity"
+          export CONTAINER_MOUNT_PATHS="/p/home
+          /p/work1
+          /p/app
+          /p/cwfs
+          /scratch
+          /etc/slurm
+          /run/munge
+          ${{ inputs.desktop.container_mount_paths }}"
+          export STARTUP_COMMAND="${{ inputs.desktop.startup_command }}"
           export PW_SESSION_NAME="${{ sessions.session }}"
           bash setup.sh
 
   # =============================================================================
-  # SESSION RUNNER - runs start.sh on compute node
+  # SESSION RUNNER
   # =============================================================================
   session_runner:
     needs: [preprocessing]
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
-      # Submit start.sh to compute node
       - name: Submit session script
         early-cancel: any-job-failed
         uses: marketplace/job_runner/v4.0
@@ -98,9 +98,9 @@ jobs:
         early-cancel: any-job-failed
         run: touch job.ended
 
-  # ==============================================================================
-  # WAIT FOR SERVICE - wait for job to start and get connection info
-  # ==============================================================================
+  # =============================================================================
+  # WAIT FOR SERVICE
+  # =============================================================================
   wait_for_service:
     needs: [preprocessing]
     ssh:
@@ -111,7 +111,7 @@ jobs:
         run: bash utils/wait_service.sh
 
   # =============================================================================
-  # UPDATE SESSION - configure session proxy with custom slug
+  # UPDATE SESSION
   # =============================================================================
   update_session:
     needs: [preprocessing, wait_for_service]
@@ -134,7 +134,7 @@ jobs:
           local_port: ${{ needs.update_session.outputs.local_port }}
 
   # =============================================================================
-  # COMPLETE - print connection info
+  # COMPLETE
   # =============================================================================
   complete:
     needs: [update_session]
@@ -298,76 +298,31 @@ jobs:
         label: Desktop Settings
         items:
           vnc_mode:
-            type: dropdown
-            label: VNC Server Mode
-            default: native
-            tooltip: Choose how the VNC server is provided
-            options:
-              - label: "Native (auto-detect installed VNC)"
-                value: native
-              - label: "Native VNC + KasmProxy"
-                value: kasmproxy
-              - label: "KasmVNC Container"
-                value: kasmvnc_container
-
-          environment:
-            type: dropdown
-            label: Desktop Environment
-            default: auto
-            hidden: ${{ inputs.desktop.vnc_mode == 'kasmvnc_container' }}
-            options:
-              - label: Auto-detect
-                value: auto
-              - label: GNOME
-                value: gnome
-              - label: XFCE
-                value: xfce
-              - label: MATE
-                value: mate
-              - label: Cinnamon
-                value: cinnamon
-              - label: KDE Plasma
-                value: kde
-              - label: LXDE
-                value: lxde
+            type: string
+            default: kasmvnc_container
+            hidden: true
 
           kasmvnc_container_runtime:
-            type: dropdown
-            label: Container Runtime
+            type: string
             default: singularity
-            tooltip: Choose the container runtime to use
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' }}
-            options:
-              - label: "Singularity"
-                value: singularity
-              - label: "Enroot"
-                value: enroot
+            hidden: true
 
           kasmvnc_container_source:
             type: dropdown
             label: Container Source
             default: git_lfs
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_runtime == 'enroot' }}
+            tooltip: Choose where to get the KasmVNC desktop container
             options:
               - label: "Pull from Git LFS"
                 value: git_lfs
               - label: "Pull from PW Bucket"
                 value: bucket
-              - label: "Path on remote system"
-                value: path
-
-          kasmvnc_container_path:
-            type: string
-            label: Container Path
-            placeholder: "/path/to/kasmvnc.sif"
-            tooltip: Full path to the Singularity container on the remote system
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_runtime == 'enroot' || inputs.desktop.kasmvnc_container_source != 'path' }}
 
           kasmvnc_bucket:
             type: bucket
             label: Bucket
             tooltip: PW bucket containing the KasmVNC container
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_runtime == 'enroot' || inputs.desktop.kasmvnc_container_source != 'bucket' }}
+            hidden: ${{ inputs.desktop.kasmvnc_container_source != 'bucket' }}
 
           kasmvnc_bucket_path:
             type: string
@@ -375,97 +330,28 @@ jobs:
             default: "kasmvnc.sif"
             placeholder: "kasmvnc.sif"
             tooltip: Path to the container file within the bucket
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_runtime == 'enroot' || inputs.desktop.kasmvnc_container_source != 'bucket' }}
+            hidden: ${{ inputs.desktop.kasmvnc_container_source != 'bucket' }}
 
           kasmvnc_git_repo:
             type: string
-            label: Git Repository
             default: "https://github.com/parallelworks/singularity-containers.git"
-            tooltip: Git repository URL containing the KasmVNC container
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_runtime == 'enroot' || inputs.desktop.kasmvnc_container_source != 'git_lfs' }}
+            hidden: true
 
           kasmvnc_git_path:
             type: string
-            label: Container Path in Repo
             default: "kasmvnc"
-            tooltip: Directory in the repository containing the container
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_runtime == 'enroot' || inputs.desktop.kasmvnc_container_source != 'git_lfs' }}
+            hidden: true
 
-          kasmvnc_enroot_container_path:
+          startup_command:
             type: string
-            label: Enroot Container Path
-            default: "/mnt/data/containers/kasmvnc.sqsh"
-            placeholder: "/mnt/data/containers/kasmvnc.sqsh"
-            tooltip: Path to the Enroot container (.sqsh file)
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_runtime != 'enroot' }}
+            label: Startup Application
+            placeholder: "firefox, virtuoso, etc."
+            tooltip: Command to run after desktop starts (optional)
+            optional: true
 
           container_mount_paths:
             type: textarea
-            label: Container Mount Paths
-            placeholder: "/mnt/data\n/shared/datasets"
-            tooltip: Directories to mount into the container (one per line)
+            label: Additional Mount Paths
+            placeholder: "/p/cwfs\n/archive/navy"
+            tooltip: "Extra directories to mount into the container (one per line). The following are always mounted: /p/home, /p/work1, /p/app, /p/cwfs, /scratch, /etc/slurm, /run/munge"
             optional: true
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' }}
-
-          kasmvnc_enable_gpu:
-            type: boolean
-            label: Enable GPU Support (--nv)
-            default: true
-            tooltip: Pass --nv flag to Singularity for NVIDIA GPU support (safe on CPU-only nodes)
-            hidden: true
-
-          kasmproxy_runtime:
-            type: dropdown
-            label: KasmProxy Container Runtime
-            default: enroot
-            tooltip: Choose the container runtime for the proxy
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' }}
-            options:
-              - label: "Enroot"
-                value: enroot
-              - label: "Singularity"
-                value: singularity
-
-          kasmproxy_enroot_path:
-            type: string
-            label: KasmProxy Enroot Container
-            default: "/mnt/data/containers/kasmproxy.sqsh"
-            placeholder: "/mnt/data/containers/kasmproxy.sqsh"
-            tooltip: Path to the KasmProxy Enroot container (.sqsh file)
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' || inputs.desktop.kasmproxy_runtime != 'enroot' }}
-
-          kasmproxy_singularity_source:
-            type: dropdown
-            label: Singularity Container Source
-            default: git_lfs
-            tooltip: Choose where to get the KasmProxy Singularity container
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' || inputs.desktop.kasmproxy_runtime != 'singularity' }}
-            options:
-              - label: "Pull from Git LFS"
-                value: git_lfs
-              - label: "Path on remote system"
-                value: path
-
-          kasmproxy_singularity_path:
-            type: string
-            label: KasmProxy Singularity Container Path
-            default: "~/pw/singularity/kasmproxy.sif"
-            placeholder: "~/pw/singularity/kasmproxy.sif"
-            tooltip: Path to the KasmProxy Singularity container (.sif file)
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' || inputs.desktop.kasmproxy_runtime != 'singularity' || inputs.desktop.kasmproxy_singularity_source != 'path' }}
-
-          kasmproxy_git_repo:
-            type: string
-            label: Git Repository
-            default: "https://github.com/parallelworks/singularity-containers.git"
-            tooltip: Git repository URL containing the KasmProxy container
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' || inputs.desktop.kasmproxy_runtime != 'singularity' || inputs.desktop.kasmproxy_singularity_source != 'git_lfs' }}
-
-          kasmproxy_git_path:
-            type: string
-            label: Container Path in Repo
-            default: "kasmproxy"
-            tooltip: Directory in the repository containing the container
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' || inputs.desktop.kasmproxy_runtime != 'singularity' || inputs.desktop.kasmproxy_singularity_source != 'git_lfs' }}
-
-
