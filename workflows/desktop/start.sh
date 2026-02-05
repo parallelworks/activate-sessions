@@ -270,17 +270,46 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
     # =========================================================================
     echo "Detecting native VNC server..."
 
-    # Try to find vncserver in PATH
-    service_vnc_exec=$(which vncserver 2>/dev/null || true)
+    # Try to find vncserver in PATH (check multiple names)
+    service_vnc_exec=""
+    for vnc_cmd in vncserver kasmvncserver tigervncserver turbovncserver; do
+        if which ${vnc_cmd} >/dev/null 2>&1; then
+            service_vnc_exec=$(which ${vnc_cmd})
+            echo "Found VNC command: ${service_vnc_exec}"
+            break
+        fi
+    done
+
+    # Debug: show PATH if not found
+    if [ -z "${service_vnc_exec}" ]; then
+        echo "DEBUG: PATH=${PATH}"
+        echo "DEBUG: Checking common locations..."
+        for loc in /usr/bin/vncserver /usr/local/bin/vncserver /opt/TurboVNC/bin/vncserver; do
+            if [ -x "$loc" ]; then
+                service_vnc_exec="$loc"
+                echo "Found VNC at: ${service_vnc_exec}"
+                break
+            fi
+        done
+    fi
 
     # Detect VNC type
     service_vnc_type=""
-    if [ -n "${service_vnc_exec}" ] && [ -f "${service_vnc_exec}" ]; then
+    if [ -n "${service_vnc_exec}" ] && [ -x "${service_vnc_exec}" ]; then
         service_vnc_type=$(${service_vnc_exec} -list 2>/dev/null | grep -oP '(TigerVNC|TurboVNC|KasmVNC)' || echo "")
+        # Fallback: check binary name
+        if [ -z "${service_vnc_type}" ]; then
+            case "${service_vnc_exec}" in
+                *kasmvnc*) service_vnc_type="KasmVNC" ;;
+                *tigervnc*) service_vnc_type="TigerVNC" ;;
+                *turbovnc*) service_vnc_type="TurboVNC" ;;
+            esac
+        fi
     fi
 
     if [ -z "${service_vnc_type}" ]; then
         echo "ERROR: No native VNC server found (kasmvncserver, tigervnc, or turbovnc required)" >&2
+        echo "DEBUG: service_vnc_exec='${service_vnc_exec}'"
         exit 1
     fi
 
