@@ -44,6 +44,7 @@ jobs:
           set -e
           cd workflows/${{ inputs.workflow_dir }}
           export KASMPROXY_CONTAINER_PATH="${{ inputs.desktop.kasmproxy_container_path }}"
+          export CONTAINER_MOUNT_PATHS="${{ inputs.desktop.container_mount_paths }}"
           export STARTUP_COMMAND="${{ inputs.desktop.startup_command }}"
           export PW_SESSION_NAME="${{ sessions.session }}"
           bash setup.sh
@@ -195,6 +196,13 @@ jobs:
             label: Startup Application
             placeholder: "firefox, virtuoso, etc."
             tooltip: Command to run after desktop starts (optional)
+            optional: true
+
+          container_mount_paths:
+            type: textarea
+            label: Container Mount Paths
+            placeholder: "/mnt/data"
+            tooltip: Directories to mount into the container (one per line)
             optional: true
 
           kasmproxy_container_path:
