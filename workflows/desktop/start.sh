@@ -452,9 +452,10 @@ EOF
     fi
 
     # Start kasmproxy container (disable NVIDIA - not needed for proxy)
-    echo "Command: enroot start --rw -e NVIDIA_VISIBLE_DEVICES= -e KASM_HOST=localhost -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} kasmproxy /usr/local/bin/run_nginx_proxy.sh"
+    # NVIDIA_VISIBLE_DEVICES=void tells enroot to skip the nvidia hook entirely
+    echo "Command: enroot start --rw -e NVIDIA_VISIBLE_DEVICES=void -e KASM_HOST=localhost -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} kasmproxy /usr/local/bin/run_nginx_proxy.sh"
     enroot start --rw \
-        -e NVIDIA_VISIBLE_DEVICES= \
+        -e NVIDIA_VISIBLE_DEVICES=void \
         -e KASM_HOST=localhost \
         -e KASM_PORT=${kasm_port} \
         -e NGINX_PORT=${service_port} \
