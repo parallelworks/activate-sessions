@@ -411,15 +411,17 @@ EOF
 
         # KasmVNC with websocket - use disableBasicAuth so proxy can connect
         echo "Starting KasmVNC with websocket port ${kasm_port}..."
-        (
-            export HOME="${VNC_HOME}"
-            echo "2" | ${service_vnc_exec} ${DISPLAY} \
-                -disableBasicAuth \
-                -xstartup "${XSTARTUP_PATH}" \
-                -websocketPort ${kasm_port} \
-                -rfbport ${displayPort}
-        ) &
-        vnc_pid=$!
+        # Save original HOME and run vncserver synchronously (it daemonizes itself)
+        ORIGINAL_HOME="${HOME}"
+        export HOME="${VNC_HOME}"
+        # Use || true to prevent set -e from exiting if vncserver returns non-zero
+        echo "2" | ${service_vnc_exec} ${DISPLAY} \
+            -disableBasicAuth \
+            -xstartup "${XSTARTUP_PATH}" \
+            -websocketPort ${kasm_port} \
+            -rfbport ${displayPort} || true
+        export HOME="${ORIGINAL_HOME}"
+        vnc_pid=""  # vncserver daemonizes, track via vncserver -kill later
     else
         # TigerVNC or TurboVNC - create basic xstartup
         XSTARTUP_PATH="${VNC_HOME}/.vnc/xstartup"
