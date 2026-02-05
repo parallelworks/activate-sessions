@@ -195,12 +195,9 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
 
     # Determine container runtime (default to enroot for backward compatibility)
     kasmproxy_runtime="${KASMPROXY_RUNTIME:-enroot}"
-    kasm_port="${KASMPROXY_KASM_PORT:-8443}"
 
     echo "${kasmproxy_runtime}" > "${JOB_DIR}/KASMPROXY_RUNTIME"
-    echo "${kasm_port}" > "${JOB_DIR}/KASMPROXY_KASM_PORT"
     echo "KasmProxy runtime: ${kasmproxy_runtime}"
-    echo "KasmVNC port: ${kasm_port}"
 
     if [[ "${kasmproxy_runtime}" == "singularity" ]]; then
         kasmproxy_source="${KASMPROXY_SINGULARITY_SOURCE:-git_lfs}"

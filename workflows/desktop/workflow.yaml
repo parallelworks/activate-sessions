@@ -53,7 +53,6 @@ jobs:
           export KASMPROXY_SINGULARITY_PATH="${{ inputs.desktop.kasmproxy_singularity_path }}"
           export KASMPROXY_GIT_REPO="${{ inputs.desktop.kasmproxy_git_repo }}"
           export KASMPROXY_GIT_PATH="${{ inputs.desktop.kasmproxy_git_path }}"
-          export KASMPROXY_KASM_PORT="${{ inputs.desktop.kasmproxy_kasm_port }}"
           export PW_SESSION_NAME="${{ sessions.session }}"
           bash setup.sh
 
@@ -469,9 +468,4 @@ jobs:
             tooltip: Directory in the repository containing the container
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' || inputs.desktop.kasmproxy_runtime != 'singularity' || inputs.desktop.kasmproxy_singularity_source != 'git_lfs' }}
 
-          kasmproxy_kasm_port:
-            type: number
-            label: KasmVNC Port
-            default: 8443
-            tooltip: Port where native KasmVNC listens (typically 8443 for SSL)
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' }}
+
