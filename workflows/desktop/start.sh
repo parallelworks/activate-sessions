@@ -242,8 +242,18 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
     echo "VNC HOME: ${VNC_HOME}"
 
     # Read kasmproxy settings
-    kasmproxy_path=$(cat "${JOB_DIR}/KASMPROXY_CONTAINER_PATH" 2>/dev/null || echo "/mnt/data/containers/kasmproxy.sqsh")
+    kasmproxy_runtime=$(cat "${JOB_DIR}/KASMPROXY_RUNTIME" 2>/dev/null || echo "enroot")
     kasm_port=$(cat "${JOB_DIR}/KASMPROXY_KASM_PORT" 2>/dev/null || echo "8443")
+
+    echo "KasmProxy runtime: ${kasmproxy_runtime}"
+    echo "KasmVNC port: ${kasm_port}"
+
+    # Read container path based on runtime
+    if [[ "${kasmproxy_runtime}" == "singularity" ]]; then
+        kasmproxy_path=$(cat "${JOB_DIR}/KASMPROXY_SINGULARITY_PATH" 2>/dev/null || echo "/mnt/data/containers/kasmproxy.sif")
+    else
+        kasmproxy_path=$(cat "${JOB_DIR}/KASMPROXY_ENROOT_PATH" 2>/dev/null || echo "/mnt/data/containers/kasmproxy.sqsh")
+    fi
 
     # Verify kasmproxy container exists
     if [ ! -f "${kasmproxy_path}" ]; then
@@ -251,7 +261,6 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
         exit 1
     fi
     echo "KasmProxy container: ${kasmproxy_path}"
-    echo "KasmVNC port: ${kasm_port}"
 
     # Get service port for nginx
     service_port=$(pw agent open-port)
@@ -423,49 +432,42 @@ de="$(detect_desktop_env)"
 echo "*** running $de desktop ***"
 
 # Disable screensaver and lock screen (important for VNC sessions)
+# This function creates autostart overrides BEFORE the desktop starts
+# and starts a watchdog to keep killing any screen lockers
 disable_screen_lock() {
     echo "Disabling screensaver and lock screen..."
 
-    # Create autostart override directory
-    mkdir -p "$HOME/.config/autostart"
+    # Use VNC_HOME_SAVED for autostart overrides (where XFCE reads them)
+    local config_home="${VNC_HOME_SAVED:-$HOME}"
+    mkdir -p "${config_home}/.config/autostart"
 
-    # Disable light-locker autostart by creating override file with Hidden=true
-    cat > "$HOME/.config/autostart/light-locker.desktop" << 'AUTOSTART_EOF'
+    # Also create in real home in case XFCE uses that
+    local real_home=$(getent passwd "$(whoami)" | cut -d: -f6)
+    if [ -n "$real_home" ] && [ -d "$real_home" ]; then
+        mkdir -p "${real_home}/.config/autostart"
+    fi
+
+    # List of screen lockers to disable
+    local lockers="light-locker xfce4-screensaver xscreensaver gnome-screensaver org.gnome.ScreenSaver xautolock"
+
+    # Create autostart override files with Hidden=true in both locations
+    for locker in $lockers; do
+        for dir in "${config_home}/.config/autostart" "${real_home}/.config/autostart"; do
+            [ -d "$dir" ] || continue
+            cat > "${dir}/${locker}.desktop" << 'AUTOSTART_EOF'
 [Desktop Entry]
 Hidden=true
 AUTOSTART_EOF
-
-    # Disable xfce4-screensaver autostart
-    cat > "$HOME/.config/autostart/xfce4-screensaver.desktop" << 'AUTOSTART_EOF'
-[Desktop Entry]
-Hidden=true
-AUTOSTART_EOF
-
-    # Disable xscreensaver autostart
-    cat > "$HOME/.config/autostart/xscreensaver.desktop" << 'AUTOSTART_EOF'
-[Desktop Entry]
-Hidden=true
-AUTOSTART_EOF
-
-    # Disable gnome-screensaver autostart
-    cat > "$HOME/.config/autostart/gnome-screensaver.desktop" << 'AUTOSTART_EOF'
-[Desktop Entry]
-Hidden=true
-AUTOSTART_EOF
-
-    # Disable org.gnome.ScreenSaver autostart
-    cat > "$HOME/.config/autostart/org.gnome.ScreenSaver.desktop" << 'AUTOSTART_EOF'
-[Desktop Entry]
-Hidden=true
-AUTOSTART_EOF
-
-    # Kill any running screen lockers (do this multiple times with delay)
-    for attempt in 1 2 3; do
-        killall -9 light-locker xfce4-screensaver xscreensaver gnome-screensaver 2>/dev/null || true
-        [ $attempt -lt 3 ] && sleep 2
+        done
     done
 
-    # Disable xfce4-screensaver via xfconf
+    # Remove xscreensaver config file if it exists
+    rm -f "${config_home}/.xscreensaver" "${real_home}/.xscreensaver" 2>/dev/null || true
+
+    # Kill any running screen lockers immediately
+    killall -9 light-locker xfce4-screensaver xscreensaver gnome-screensaver xautolock 2>/dev/null || true
+
+    # Disable via xfconf (create channel files before xfce starts)
     if command -v xfconf-query >/dev/null 2>&1; then
         # Disable lock screen completely
         xfconf-query -c xfce4-screensaver -p /lock/enabled -s false --create -t bool 2>/dev/null || true
@@ -476,8 +478,6 @@ AUTOSTART_EOF
         xfconf-query -c xfce4-screensaver -p /saver/enabled -s false --create -t bool 2>/dev/null || true
         xfconf-query -c xfce4-screensaver -p /saver/idle-activation/enabled -s false --create -t bool 2>/dev/null || true
         xfconf-query -c xfce4-screensaver -p /saver/mode -s 0 --create -t int 2>/dev/null || true
-
-        # Set idle timeout to 0 (never)
         xfconf-query -c xfce4-screensaver -p /saver/idle-activation/delay -s 0 --create -t int 2>/dev/null || true
 
         # Disable xfce4-power-manager screen blanking and lock
@@ -494,30 +494,37 @@ AUTOSTART_EOF
         xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/inactivity-sleep-mode-on-ac -s 0 --create -t int 2>/dev/null || true
         xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/inactivity-sleep-mode-on-battery -s 0 --create -t int 2>/dev/null || true
 
-        # Disable xfce4-session lock on suspend
+        # Disable xfce4-session lock
         xfconf-query -c xfce4-session -p /general/LockScreen -s false --create -t bool 2>/dev/null || true
         xfconf-query -c xfce4-session -p /general/AutoLock -s false --create -t bool 2>/dev/null || true
     fi
 
-    # Disable DPMS (Display Power Management) via xset
-    if command -v xset >/dev/null 2>&1; then
-        xset s off 2>/dev/null || true       # Disable screen saver
-        xset s noblank 2>/dev/null || true   # Don't blank the screen
-        xset s 0 0 2>/dev/null || true       # Set timeout to 0
-        xset -dpms 2>/dev/null || true       # Disable DPMS
+    # Disable via gsettings (for GNOME-based components)
+    if command -v gsettings >/dev/null 2>&1; then
+        gsettings set org.gnome.desktop.screensaver lock-enabled false 2>/dev/null || true
+        gsettings set org.gnome.desktop.screensaver idle-activation-enabled false 2>/dev/null || true
+        gsettings set org.gnome.desktop.session idle-delay 0 2>/dev/null || true
     fi
 
-    # Start a background process to keep killing screen lockers
-    # (in case something restarts them)
+    # Disable DPMS via xset
+    if command -v xset >/dev/null 2>&1; then
+        xset s off 2>/dev/null || true
+        xset s noblank 2>/dev/null || true
+        xset s 0 0 2>/dev/null || true
+        xset -dpms 2>/dev/null || true
+    fi
+
+    # Start aggressive watchdog - kill screen lockers every 10 seconds
     (
-        sleep 30
         while true; do
-            killall -9 light-locker xfce4-screensaver xscreensaver 2>/dev/null || true
-            # Re-apply xset settings periodically
-            xset s off s noblank -dpms 2>/dev/null || true
-            sleep 60
+            sleep 10
+            # Kill all known screen lockers
+            killall -9 light-locker xfce4-screensaver xscreensaver gnome-screensaver xautolock 2>/dev/null || true
+            # Re-apply xset settings
+            xset s off s noblank s 0 0 -dpms 2>/dev/null || true
         done
     ) &
+    echo "Screen lock watchdog started (PID: $!)"
 
     echo "Screen lock disabled"
 }
@@ -587,6 +594,9 @@ configure_xfce_appearance() {
 
     echo "XFCE appearance configured"
 }
+
+# Disable screen lock BEFORE starting the desktop
+disable_screen_lock
 
 case "$de" in
 xfce)
@@ -703,22 +713,6 @@ EOF
     # =========================================================================
     echo "Starting KasmProxy container..."
 
-    # Start kasmproxy container via enroot (container OS now has nvidia support)
-    KASMPROXY_CONTAINER_NAME="kasmproxy"
-
-    echo "DEBUG: About to check/create container..."
-
-    # Remove old container and recreate fresh to avoid stale state
-    echo "Removing any existing kasmproxy container..."
-    enroot remove -f "${KASMPROXY_CONTAINER_NAME}" 2>/dev/null || true
-
-    echo "Creating fresh kasmproxy container instance..."
-    enroot create --force --name "${KASMPROXY_CONTAINER_NAME}" "${kasmproxy_path}" || {
-        echo "ERROR: Failed to create container"
-        exit 1
-    }
-    echo "Container created successfully"
-
     # Create a wrapper script that sets env vars and runs nginx directly
     # (avoids the pkill/killall in the container script that terminates enroot)
     PROXY_WRAPPER="/tmp/kasmproxy_wrapper_$$.sh"
@@ -832,18 +826,54 @@ WRAPPER_EOF
     echo "BASE_PATH: ${BASE_PATH}"
     echo "VNC Display: ${DISPLAY}"
     echo "VNC Type: ${service_vnc_type}"
+    echo "KasmProxy Runtime: ${kasmproxy_runtime}"
     echo "=========================================="
 
-    # Start enroot in FOREGROUND (blocking) - script waits here
-    echo "Starting kasmproxy container via enroot (foreground)..."
-    echo "Command: enroot start --rw -m ${PROXY_WRAPPER}:/run_proxy.sh -e KASM_HOST=${KASM_HOST_IP} -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} ${KASMPROXY_CONTAINER_NAME} /run_proxy.sh"
-    enroot start --rw \
-        -m "${PROXY_WRAPPER}:/run_proxy.sh" \
-        -e "KASM_HOST=${KASM_HOST_IP}" \
-        -e KASM_PORT=${kasm_port} \
-        -e NGINX_PORT=${service_port} \
-        -e "BASE_PATH=${BASE_PATH}" \
-        "${KASMPROXY_CONTAINER_NAME}" /run_proxy.sh
+    # Start proxy container based on runtime
+    if [[ "${kasmproxy_runtime}" == "singularity" ]]; then
+        # =====================================================================
+        # Singularity Runtime
+        # =====================================================================
+        echo "Starting kasmproxy container via Singularity (foreground)..."
+        echo "Container: ${kasmproxy_path}"
+
+        singularity run \
+            --bind "${PROXY_WRAPPER}:/run_proxy.sh" \
+            --env "KASM_HOST=${KASM_HOST_IP}" \
+            --env "KASM_PORT=${kasm_port}" \
+            --env "NGINX_PORT=${service_port}" \
+            --env "BASE_PATH=${BASE_PATH}" \
+            "${kasmproxy_path}" /run_proxy.sh
+    else
+        # =====================================================================
+        # Enroot Runtime (default)
+        # =====================================================================
+        KASMPROXY_CONTAINER_NAME="kasmproxy"
+
+        echo "DEBUG: About to check/create container..."
+
+        # Remove old container and recreate fresh to avoid stale state
+        echo "Removing any existing kasmproxy container..."
+        enroot remove -f "${KASMPROXY_CONTAINER_NAME}" 2>/dev/null || true
+
+        echo "Creating fresh kasmproxy container instance..."
+        enroot create --force --name "${KASMPROXY_CONTAINER_NAME}" "${kasmproxy_path}" || {
+            echo "ERROR: Failed to create container"
+            exit 1
+        }
+        echo "Container created successfully"
+
+        # Start enroot in FOREGROUND (blocking) - script waits here
+        echo "Starting kasmproxy container via enroot (foreground)..."
+        echo "Command: enroot start --rw -m ${PROXY_WRAPPER}:/run_proxy.sh -e KASM_HOST=${KASM_HOST_IP} -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} ${KASMPROXY_CONTAINER_NAME} /run_proxy.sh"
+        enroot start --rw \
+            -m "${PROXY_WRAPPER}:/run_proxy.sh" \
+            -e "KASM_HOST=${KASM_HOST_IP}" \
+            -e KASM_PORT=${kasm_port} \
+            -e NGINX_PORT=${service_port} \
+            -e "BASE_PATH=${BASE_PATH}" \
+            "${KASMPROXY_CONTAINER_NAME}" /run_proxy.sh
+    fi
 
     echo "KasmProxy container exited"
 
