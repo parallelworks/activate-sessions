@@ -454,13 +454,14 @@ EOF
     # Start kasmproxy container via enroot (container OS now has nvidia support)
     KASMPROXY_CONTAINER_NAME="kasmproxy"
 
-    # Create container instance if needed
-    if ! enroot list 2>/dev/null | grep -q "^${KASMPROXY_CONTAINER_NAME}$"; then
-        echo "Creating kasmproxy container instance..."
-        enroot create --name "${KASMPROXY_CONTAINER_NAME}" "${kasmproxy_path}"
-    else
-        echo "KasmProxy container instance already exists"
+    # Remove old container and recreate fresh to avoid stale state
+    if enroot list 2>/dev/null | grep -q "^${KASMPROXY_CONTAINER_NAME}$"; then
+        echo "Removing old kasmproxy container instance..."
+        enroot remove "${KASMPROXY_CONTAINER_NAME}" 2>/dev/null || true
     fi
+
+    echo "Creating fresh kasmproxy container instance..."
+    enroot create --name "${KASMPROXY_CONTAINER_NAME}" "${kasmproxy_path}"
 
     echo "Starting kasmproxy container via enroot..."
     echo "Command: enroot start --rw -e KASM_HOST=localhost -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} ${KASMPROXY_CONTAINER_NAME} /usr/local/bin/run_nginx_proxy.sh"
