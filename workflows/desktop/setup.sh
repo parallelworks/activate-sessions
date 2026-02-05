@@ -173,10 +173,13 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     # Write GPU setting for start.sh
     echo "${desktop_kasmvnc_enable_gpu:-true}" > "${JOB_DIR}/KASMVNC_CONTAINER_ENABLE_GPU"
 
-    # Write mount path for start.sh (optional)
-    if [ -n "${KASM_MOUNT_PATH}" ]; then
-        echo "${KASM_MOUNT_PATH}" > "${JOB_DIR}/KASMVNC_MOUNT_PATH"
-        echo "Mount path: ${KASM_MOUNT_PATH}"
+    # Write mount paths for start.sh (optional, newline-delimited)
+    if [ -n "${CONTAINER_MOUNT_PATHS:-}" ]; then
+        echo "${CONTAINER_MOUNT_PATHS}" > "${JOB_DIR}/CONTAINER_MOUNT_PATHS"
+        echo "Mount paths:"
+        echo "${CONTAINER_MOUNT_PATHS}" | while IFS= read -r p; do
+            [ -n "$p" ] && echo "  - $p"
+        done
     fi
 
     # Build basepath for slug (KasmVNC container mode doesn't need password in slug)

@@ -46,7 +46,7 @@ jobs:
           export KASM_BUCKET_URI="${{ inputs.desktop.kasmvnc_bucket.uri }}/${{ inputs.desktop.kasmvnc_bucket_path }}"
           export KASM_CONTAINER_RUNTIME="${{ inputs.desktop.kasmvnc_container_runtime }}"
           export KASM_ENROOT_PATH="${{ inputs.desktop.kasmvnc_enroot_container_path }}"
-          export KASM_MOUNT_PATH="${{ inputs.desktop.kasmvnc_mount_path }}"
+          export CONTAINER_MOUNT_PATHS="${{ inputs.desktop.container_mount_paths }}"
           export KASMPROXY_RUNTIME="${{ inputs.desktop.kasmproxy_runtime }}"
           export KASMPROXY_ENROOT_PATH="${{ inputs.desktop.kasmproxy_enroot_path }}"
           export KASMPROXY_SINGULARITY_SOURCE="${{ inputs.desktop.kasmproxy_singularity_source }}"
@@ -399,11 +399,11 @@ jobs:
             tooltip: Path to the Enroot container (.sqsh file)
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_runtime != 'enroot' }}
 
-          kasmvnc_mount_path:
-            type: string
-            label: Additional Mount Path
-            placeholder: "/mnt/data"
-            tooltip: Optional directory to mount into the container (e.g., /mnt/data for app executables)
+          container_mount_paths:
+            type: textarea
+            label: Container Mount Paths
+            placeholder: "/mnt/data\n/shared/datasets"
+            tooltip: Directories to mount into the container (one per line)
             optional: true
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' }}
 

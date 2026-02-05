@@ -48,6 +48,40 @@ if [ -f "${JOB_DIR}/VNC_MODE" ]; then
 fi
 echo "VNC Mode: ${vnc_mode}"
 
+# =============================================================================
+# Shared utility: build mount flags from newline-delimited paths file
+# =============================================================================
+# Usage: build_mount_flags <runtime> <paths_file>
+#   runtime: "enroot" or "singularity"
+#   paths_file: file containing one mount path per line
+# Outputs space-separated flags to stdout
+build_mount_flags() {
+    local runtime="$1"
+    local paths_file="$2"
+    local flags=""
+
+    if [ ! -f "${paths_file}" ]; then
+        echo ""
+        return 0
+    fi
+
+    while IFS= read -r mount_path || [ -n "${mount_path}" ]; do
+        # Skip empty lines and comments
+        mount_path=$(echo "${mount_path}" | xargs)  # trim whitespace
+        [ -z "${mount_path}" ] && continue
+        [[ "${mount_path}" == \#* ]] && continue
+
+        if [ "${runtime}" = "enroot" ]; then
+            flags="${flags} -m ${mount_path}:${mount_path}"
+        else
+            flags="${flags} --bind ${mount_path}:${mount_path}"
+        fi
+        echo "  Mount: ${mount_path}" >&2
+    done < "${paths_file}"
+
+    echo "${flags}"
+}
+
 # Read session name (written by setup.sh)
 if [ -f "${JOB_DIR}/SESSION_NAME" ]; then
     PW_SESSION_NAME=$(cat "${JOB_DIR}/SESSION_NAME")
@@ -119,11 +153,11 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     }
     trap cleanup_kasmvnc_container EXIT INT TERM
 
-    # Read optional mount path
-    MOUNT_PATH=""
-    if [ -f "${JOB_DIR}/KASMVNC_MOUNT_PATH" ]; then
-        MOUNT_PATH=$(cat "${JOB_DIR}/KASMVNC_MOUNT_PATH")
-        echo "Mount path: ${MOUNT_PATH}"
+    # Read mount paths (newline-delimited)
+    MOUNT_FLAGS=""
+    if [ -f "${JOB_DIR}/CONTAINER_MOUNT_PATHS" ]; then
+        echo "Container mount paths:"
+        MOUNT_FLAGS=$(build_mount_flags "${container_runtime}" "${JOB_DIR}/CONTAINER_MOUNT_PATHS")
     fi
 
     # =========================================================================
@@ -157,18 +191,10 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             echo "Enroot container instance already exists"
         fi
 
-        # Build mount flag if specified
-        ENROOT_MOUNT_FLAG=""
-        if [ -n "${MOUNT_PATH}" ]; then
-            ENROOT_MOUNT_FLAG="-m ${MOUNT_PATH}:${MOUNT_PATH}"
-            echo "Enroot mount: ${ENROOT_MOUNT_FLAG}"
-        fi
-
         # Start Enroot container (GPU support is enabled by default in Enroot)
         echo "Starting Enroot container..."
-        echo "Command: enroot start --rw ${ENROOT_MOUNT_FLAG} -e HOME=/tmp/${USER}-kasmhome -e BASE_PATH=${BASE_PATH} -e NGINX_PORT=${service_port} -e KASM_PORT=${kasm_port} -e VNC_DISPLAY=${vnc_display} ${ENROOT_CONTAINER_NAME} /usr/local/bin/run_kasm_nginx.sh"
         enroot start --rw \
-            ${ENROOT_MOUNT_FLAG} \
+            ${MOUNT_FLAGS} \
             -e HOME=/tmp/${USER}-kasmhome \
             -e BASE_PATH="${BASE_PATH}" \
             -e NGINX_PORT="${service_port}" \
@@ -214,17 +240,11 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             echo "GPU support disabled"
         fi
 
-        # Build mount flag if specified
-        SINGULARITY_MOUNT_FLAG=""
-        if [ -n "${MOUNT_PATH}" ]; then
-            SINGULARITY_MOUNT_FLAG="--bind ${MOUNT_PATH}:${MOUNT_PATH}"
-        fi
-
         # Start Singularity container
         echo "Starting Singularity container..."
         singularity run \
             ${GPU_FLAG} \
-            ${SINGULARITY_MOUNT_FLAG} \
+            ${MOUNT_FLAGS} \
             --env BASE_PATH="${BASE_PATH}" \
             --env NGINX_PORT="${service_port}" \
             --env KASM_PORT="${kasm_port}" \
