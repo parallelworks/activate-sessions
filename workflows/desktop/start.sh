@@ -436,11 +436,14 @@ EOF
     fi
 
     echo "Native VNC started with PID ${vnc_pid}"
+    echo "DEBUG: Sleeping 3 seconds..."
     sleep 3  # Allow VNC to start
+    echo "DEBUG: Sleep complete, starting proxy setup..."
 
     # =========================================================================
     # Step 2: Start KasmProxy container
     # =========================================================================
+    echo "DEBUG: Entering proxy container setup..."
     echo "Starting KasmProxy container..."
 
     # Create kasmproxy container instance if needed
@@ -454,6 +457,8 @@ EOF
     # Start kasmproxy container via enroot (container OS now has nvidia support)
     KASMPROXY_CONTAINER_NAME="kasmproxy"
 
+    echo "DEBUG: About to check/create container..."
+
     # Remove old container and recreate fresh to avoid stale state
     if enroot list 2>/dev/null | grep -q "^${KASMPROXY_CONTAINER_NAME}$"; then
         echo "Removing old kasmproxy container instance..."
@@ -461,7 +466,11 @@ EOF
     fi
 
     echo "Creating fresh kasmproxy container instance..."
-    enroot create --name "${KASMPROXY_CONTAINER_NAME}" "${kasmproxy_path}"
+    enroot create --name "${KASMPROXY_CONTAINER_NAME}" "${kasmproxy_path}" || {
+        echo "ERROR: Failed to create container"
+        exit 1
+    }
+    echo "DEBUG: Container created successfully"
 
     # Create a wrapper script that sets env vars and runs nginx directly
     # (avoids the pkill/killall in the container script that terminates enroot)
