@@ -203,7 +203,82 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
     echo "KasmVNC port: ${kasm_port}"
 
     if [[ "${kasmproxy_runtime}" == "singularity" ]]; then
-        kasmproxy_path="${KASMPROXY_SINGULARITY_PATH:-/mnt/data/containers/kasmproxy.sif}"
+        kasmproxy_source="${KASMPROXY_SINGULARITY_SOURCE:-git_lfs}"
+        echo "KasmProxy Singularity source: ${kasmproxy_source}"
+
+        if [[ "${kasmproxy_source}" == "git_lfs" ]]; then
+            # Pull from Git LFS
+            KASMPROXY_SIF="${CONTAINER_DIR}/kasmproxy.sif"
+
+            # Ensure Git LFS is available
+            if ! git lfs version >/dev/null 2>&1; then
+                echo "Git LFS not found, installing..."
+                git clone --depth 1 https://github.com/parallelworks/singularity-containers.git \
+                    ~/singularity-containers-tmp || true
+                if [ -d ~/singularity-containers-tmp ]; then
+                    bash ~/singularity-containers-tmp/scripts/sif_parts.sh install-lfs
+                    rm -rf ~/singularity-containers-tmp
+                    echo "Git LFS installed successfully"
+                else
+                    echo "WARNING: Failed to install Git LFS" >&2
+                fi
+            else
+                echo "Git LFS already available: $(git lfs version)"
+            fi
+
+            # Pull kasmproxy container if not present or empty
+            if [ ! -f "${KASMPROXY_SIF}" ] || [ ! -s "${KASMPROXY_SIF}" ]; then
+                echo "Fetching KasmProxy container via sparse checkout..."
+
+                rm -f "${KASMPROXY_SIF}" 2>/dev/null || true
+
+                TMP_CONTAINER_DIR="$(mktemp -d)/singularity-containers"
+                mkdir -p "${TMP_CONTAINER_DIR}"
+
+                cd "${TMP_CONTAINER_DIR}"
+                git init
+                git_repo="${KASMPROXY_GIT_REPO:-https://github.com/parallelworks/singularity-containers.git}"
+                git_path="${KASMPROXY_GIT_PATH:-kasmproxy}"
+                git remote add origin "${git_repo}"
+                git config core.sparseCheckout true
+                echo "${git_path}/*" > .git/info/sparse-checkout
+                git lfs install
+                git pull origin main
+                git lfs pull --include="${git_path}/*"
+
+                mkdir -p "${CONTAINER_DIR}"
+
+                # Check if there are split parts
+                if compgen -G "${git_path}/kasmproxy.sif.*" > /dev/null 2>&1; then
+                    echo "Joining SIF parts..."
+                    cat ${git_path}/kasmproxy.sif.* > "${CONTAINER_DIR}/kasmproxy.sif"
+                elif [ -f "${git_path}/kasmproxy.sif" ]; then
+                    echo "Copying KasmProxy container..."
+                    cp "${git_path}/kasmproxy.sif" "${CONTAINER_DIR}/kasmproxy.sif"
+                else
+                    echo "WARNING: KasmProxy container not found after pull" >&2
+                fi
+
+                cd - >/dev/null
+                rm -rf "${TMP_CONTAINER_DIR}"
+
+                echo "KasmProxy container cached at ${KASMPROXY_SIF}"
+            else
+                echo "KasmProxy container already present at ${KASMPROXY_SIF}"
+            fi
+
+            kasmproxy_path="${KASMPROXY_SIF}"
+        else
+            # User-provided path
+            kasmproxy_path="${KASMPROXY_SINGULARITY_PATH}"
+            # Expand ~ to home directory
+            kasmproxy_path="${kasmproxy_path/#\~/$HOME}"
+            if [ -z "${kasmproxy_path}" ]; then
+                echo "ERROR: kasmproxy_singularity_path not provided" >&2
+                exit 1
+            fi
+        fi
+
         echo "${kasmproxy_path}" > "${JOB_DIR}/KASMPROXY_SINGULARITY_PATH"
         echo "KasmProxy Singularity container: ${kasmproxy_path}"
     else

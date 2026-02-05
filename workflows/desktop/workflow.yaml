@@ -49,7 +49,10 @@ jobs:
           export KASM_MOUNT_PATH="${{ inputs.desktop.kasmvnc_mount_path }}"
           export KASMPROXY_RUNTIME="${{ inputs.desktop.kasmproxy_runtime }}"
           export KASMPROXY_ENROOT_PATH="${{ inputs.desktop.kasmproxy_enroot_path }}"
+          export KASMPROXY_SINGULARITY_SOURCE="${{ inputs.desktop.kasmproxy_singularity_source }}"
           export KASMPROXY_SINGULARITY_PATH="${{ inputs.desktop.kasmproxy_singularity_path }}"
+          export KASMPROXY_GIT_REPO="${{ inputs.desktop.kasmproxy_git_repo }}"
+          export KASMPROXY_GIT_PATH="${{ inputs.desktop.kasmproxy_git_path }}"
           export KASMPROXY_KASM_PORT="${{ inputs.desktop.kasmproxy_kasm_port }}"
           export PW_SESSION_NAME="${{ sessions.session }}"
           bash setup.sh
@@ -432,13 +435,39 @@ jobs:
             tooltip: Path to the KasmProxy Enroot container (.sqsh file)
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' || inputs.desktop.kasmproxy_runtime != 'enroot' }}
 
+          kasmproxy_singularity_source:
+            type: dropdown
+            label: Singularity Container Source
+            default: git_lfs
+            tooltip: Choose where to get the KasmProxy Singularity container
+            hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' || inputs.desktop.kasmproxy_runtime != 'singularity' }}
+            options:
+              - label: "Pull from Git LFS"
+                value: git_lfs
+              - label: "Path on remote system"
+                value: path
+
           kasmproxy_singularity_path:
             type: string
-            label: KasmProxy Singularity Container
-            default: "/mnt/data/containers/kasmproxy.sif"
-            placeholder: "/mnt/data/containers/kasmproxy.sif"
+            label: KasmProxy Singularity Container Path
+            default: "~/pw/singularity/kasmproxy.sif"
+            placeholder: "~/pw/singularity/kasmproxy.sif"
             tooltip: Path to the KasmProxy Singularity container (.sif file)
-            hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' || inputs.desktop.kasmproxy_runtime != 'singularity' }}
+            hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' || inputs.desktop.kasmproxy_runtime != 'singularity' || inputs.desktop.kasmproxy_singularity_source != 'path' }}
+
+          kasmproxy_git_repo:
+            type: string
+            label: Git Repository
+            default: "https://github.com/parallelworks/singularity-containers.git"
+            tooltip: Git repository URL containing the KasmProxy container
+            hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' || inputs.desktop.kasmproxy_runtime != 'singularity' || inputs.desktop.kasmproxy_singularity_source != 'git_lfs' }}
+
+          kasmproxy_git_path:
+            type: string
+            label: Container Path in Repo
+            default: "kasmproxy"
+            tooltip: Directory in the repository containing the container
+            hidden: ${{ inputs.desktop.vnc_mode != 'kasmproxy' || inputs.desktop.kasmproxy_runtime != 'singularity' || inputs.desktop.kasmproxy_singularity_source != 'git_lfs' }}
 
           kasmproxy_kasm_port:
             type: number
