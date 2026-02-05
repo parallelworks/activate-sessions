@@ -331,6 +331,15 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
 #!/bin/sh
 set -eu
 
+# Reset HOME to user's real home directory (not the temp VNC home)
+# Get real home from passwd database
+REAL_HOME=$(getent passwd "$(whoami)" | cut -d: -f6)
+if [ -n "$REAL_HOME" ] && [ -d "$REAL_HOME" ]; then
+    export HOME="$REAL_HOME"
+    echo "HOME reset to: $HOME"
+    cd "$HOME" 2>/dev/null || true
+fi
+
 detect_desktop_env() {
     if command -v cinnamon-session >/dev/null 2>&1; then
         echo "cinnamon"
