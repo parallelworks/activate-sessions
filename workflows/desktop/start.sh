@@ -352,6 +352,29 @@ detect_desktop_env() {
 de="$(detect_desktop_env)"
 echo "*** running $de desktop ***"
 
+# Configure XFCE appearance (if xfconf-query available)
+configure_xfce_appearance() {
+    if command -v xfconf-query >/dev/null 2>&1; then
+        echo "Configuring XFCE appearance..."
+        # Set Adwaita-dark theme
+        xfconf-query -c xsettings -p /Net/ThemeName -s "Adwaita-dark" 2>/dev/null || true
+        xfconf-query -c xsettings -p /Net/IconThemeName -s "Adwaita" 2>/dev/null || true
+        xfconf-query -c xfwm4 -p /general/theme -s "Adwaita-dark" 2>/dev/null || true
+
+        # Set solid black background for all monitors/workspaces
+        for monitor in $(xfconf-query -c xfce4-desktop -l 2>/dev/null | grep -E 'last-image$' | sed 's|/last-image$||'); do
+            xfconf-query -c xfce4-desktop -p "${monitor}/color-style" -n -t int -s 0 2>/dev/null || true
+            xfconf-query -c xfce4-desktop -p "${monitor}/rgba1" -n -t double -t double -t double -t double -s 0 -s 0 -s 0 -s 1 2>/dev/null || true
+            xfconf-query -c xfce4-desktop -p "${monitor}/image-style" -n -t int -s 0 2>/dev/null || true
+        done
+
+        # Also try common paths
+        xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/color-style -n -t int -s 0 2>/dev/null || true
+        xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/rgba1 -n -t double -t double -t double -t double -s 0 -s 0 -s 0 -s 1 2>/dev/null || true
+        xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/image-style -n -t int -s 0 2>/dev/null || true
+    fi
+}
+
 case "$de" in
 cinnamon)
     # Clean up stale Cinnamon processes that break restarts under VNC
@@ -389,6 +412,8 @@ kde)
     ;;
 *)
     # Safe fallback to XFCE (works well with KasmVNC)
+    # Configure appearance before starting
+    (sleep 2 && configure_xfce_appearance) &
     exec xfce4-session
     ;;
 esac
