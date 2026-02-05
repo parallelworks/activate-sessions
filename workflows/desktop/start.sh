@@ -422,6 +422,45 @@ detect_desktop_env() {
 de="$(detect_desktop_env)"
 echo "*** running $de desktop ***"
 
+# Disable screensaver and lock screen (important for VNC sessions)
+disable_screen_lock() {
+    echo "Disabling screensaver and lock screen..."
+
+    # Kill any running screen lockers
+    killall -q light-locker xfce4-screensaver xscreensaver gnome-screensaver 2>/dev/null || true
+
+    # Disable xfce4-screensaver via xfconf
+    if command -v xfconf-query >/dev/null 2>&1; then
+        # Disable lock screen
+        xfconf-query -c xfce4-screensaver -p /lock/enabled -s false --create -t bool 2>/dev/null || true
+        xfconf-query -c xfce4-screensaver -p /lock/saver-activation/enabled -s false --create -t bool 2>/dev/null || true
+        # Disable screensaver activation
+        xfconf-query -c xfce4-screensaver -p /saver/enabled -s false --create -t bool 2>/dev/null || true
+        xfconf-query -c xfce4-screensaver -p /saver/idle-activation/enabled -s false --create -t bool 2>/dev/null || true
+        # Set idle timeout to 0 (never)
+        xfconf-query -c xfce4-screensaver -p /saver/idle-activation/delay -s 0 --create -t int 2>/dev/null || true
+
+        # Disable xfce4-power-manager screen blanking and lock
+        xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/blank-on-ac -s 0 --create -t int 2>/dev/null || true
+        xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/dpms-enabled -s false --create -t bool 2>/dev/null || true
+        xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/dpms-on-ac-off -s 0 --create -t int 2>/dev/null || true
+        xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/dpms-on-ac-sleep -s 0 --create -t int 2>/dev/null || true
+        xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/lock-screen-suspend-hibernate -s false --create -t bool 2>/dev/null || true
+
+        # Disable xfce4-session lock on suspend
+        xfconf-query -c xfce4-session -p /general/LockScreen -s false --create -t bool 2>/dev/null || true
+    fi
+
+    # Disable DPMS (Display Power Management) via xset
+    if command -v xset >/dev/null 2>&1; then
+        xset s off 2>/dev/null || true      # Disable screen saver
+        xset s noblank 2>/dev/null || true  # Don't blank the screen
+        xset -dpms 2>/dev/null || true      # Disable DPMS
+    fi
+
+    echo "Screen lock disabled"
+}
+
 # Configure XFCE appearance (if xfconf-query available)
 configure_xfce_appearance() {
     if ! command -v xfconf-query >/dev/null 2>&1; then
@@ -438,6 +477,9 @@ configure_xfce_appearance() {
         fi
         sleep 1
     done
+
+    # Disable screensaver and lock screen first
+    disable_screen_lock
 
     # Set GTK theme (Adwaita-dark or fallback to Greybird-dark)
     for theme in "Adwaita-dark" "Greybird-dark" "Arc-Dark"; do
