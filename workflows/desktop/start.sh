@@ -347,9 +347,10 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
         echo "KasmProxy container instance already exists"
     fi
 
-    # Start kasmproxy container
-    echo "Command: enroot start --rw -e KASM_HOST=localhost -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} kasmproxy /usr/local/bin/run_nginx_proxy.sh"
+    # Start kasmproxy container (disable NVIDIA - not needed for proxy)
+    echo "Command: enroot start --rw -e NVIDIA_VISIBLE_DEVICES= -e KASM_HOST=localhost -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} kasmproxy /usr/local/bin/run_nginx_proxy.sh"
     enroot start --rw \
+        -e NVIDIA_VISIBLE_DEVICES= \
         -e KASM_HOST=localhost \
         -e KASM_PORT=${kasm_port} \
         -e NGINX_PORT=${service_port} \
