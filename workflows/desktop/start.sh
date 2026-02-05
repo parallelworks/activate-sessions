@@ -324,9 +324,10 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
 
     if [[ "${service_vnc_type}" == "KasmVNC" ]]; then
         # KasmVNC needs xstartup and user setup
-        # Create xstartup for desktop environment detection
+        # Create xstartup for desktop environment detection (prefer Cinnamon, fallback to XFCE)
         XSTARTUP_PATH="${VNC_HOME}/.vnc/xstartup"
-        cat > "${XSTARTUP_PATH}" <<'KASMEOF'
+        if ! [ -f "${XSTARTUP_PATH}" ]; then
+            cat > "${XSTARTUP_PATH}" <<'KASMEOF'
 #!/bin/sh
 set -eu
 
@@ -337,12 +338,14 @@ detect_desktop_env() {
         echo "mate"
     elif command -v startlxde >/dev/null 2>&1; then
         echo "lxde"
-    elif command -v xfce4-session >/dev/null 2>&1; then
-        echo "xfce"
     elif command -v gnome-session >/dev/null 2>&1; then
         echo "gnome"
+    elif command -v lxqt-session >/dev/null 2>&1; then
+        echo "lxqt"
+    elif command -v startplasma-x11 >/dev/null 2>&1 || command -v plasmashell >/dev/null 2>&1; then
+        echo "kde"
     else
-        echo "xfce"
+        echo "none"
     fi
 }
 
@@ -351,9 +354,17 @@ echo "*** running $de desktop ***"
 
 case "$de" in
 cinnamon)
+    # Clean up stale Cinnamon processes that break restarts under VNC
+    killall -q cinnamon cinnamon-session cinnamon-panel muffin nemo nemo-desktop || true
+
+    # VNC stability for Cinnamon (prevents blank desktop on second start)
     export LIBGL_ALWAYS_SOFTWARE=1
     export CLUTTER_BACKEND=x11
     export GDK_BACKEND=x11
+    export QT_QPA_PLATFORM=xcb
+    export MOZ_ENABLE_WAYLAND=0
+
+    # Start Cinnamon with a scoped D-Bus session
     exec dbus-run-session -- cinnamon-session
     ;;
 mate)
@@ -362,24 +373,43 @@ mate)
 lxde)
     exec startlxde
     ;;
-xfce)
-    exec xfce4-session
-    ;;
 gnome)
     export XDG_CURRENT_DESKTOP=GNOME
     export XDG_SESSION_TYPE=x11
     export GDK_BACKEND=x11
+    export QT_QPA_PLATFORM=xcb
+    export MOZ_ENABLE_WAYLAND=0
     exec dbus-run-session -- gnome-session --session=gnome
     ;;
+lxqt)
+    exec lxqt-session
+    ;;
+kde)
+    exec startplasma-x11
+    ;;
 *)
+    # Safe fallback to XFCE (works well with KasmVNC)
     exec xfce4-session
     ;;
 esac
 KASMEOF
-        chmod +x "${XSTARTUP_PATH}"
+            chmod 0755 "${XSTARTUP_PATH}"
+            echo "Kasm xstartup wrapper installed at ${XSTARTUP_PATH}"
+        fi
+
+        # FIXME: REMOVE THIS CODE WHEN ROCKY 9 IMAGE IS UPDATED!
+        # Disable KasmVNC's interactive desktop selector script
+        if [ -f /usr/lib/kasmvncserver/select-de.sh ]; then
+            echo "Disabling KasmVNC select-de.sh interactive prompt..."
+            sudo mv /usr/lib/kasmvncserver/select-de.sh /usr/lib/kasmvncserver/select-de.sh.bak 2>/dev/null || true
+            sudo tee /usr/lib/kasmvncserver/select-de.sh >/dev/null <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+            sudo chmod +x /usr/lib/kasmvncserver/select-de.sh
+        fi
 
         # KasmVNC with websocket - use disableBasicAuth so proxy can connect
-        # Pipe "2" to select "Start without write user" if prompted
         echo "Starting KasmVNC with websocket port ${kasm_port}..."
         (
             export HOME="${VNC_HOME}"
