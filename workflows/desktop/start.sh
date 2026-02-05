@@ -414,12 +414,15 @@ EOF
         # Save original HOME and run vncserver synchronously (it daemonizes itself)
         ORIGINAL_HOME="${HOME}"
         export HOME="${VNC_HOME}"
-        # Use || true to prevent set -e from exiting if vncserver returns non-zero
-        echo "2" | ${service_vnc_exec} ${DISPLAY} \
+        # Use here-string to avoid pipe issues with set -o pipefail
+        # || true prevents set -e from exiting on non-zero
+        ${service_vnc_exec} ${DISPLAY} \
             -disableBasicAuth \
             -xstartup "${XSTARTUP_PATH}" \
             -websocketPort ${kasm_port} \
-            -rfbport ${displayPort} || true
+            -rfbport ${displayPort} <<< "2" || true
+        vnc_exit=$?
+        echo "DEBUG: vncserver exited with code ${vnc_exit}"
         export HOME="${ORIGINAL_HOME}"
         vnc_pid=""  # vncserver daemonizes, track via vncserver -kill later
     else
