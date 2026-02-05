@@ -71,6 +71,12 @@ build_mount_flags() {
         [ -z "${mount_path}" ] && continue
         [[ "${mount_path}" == \#* ]] && continue
 
+        # Skip paths that don't exist on this system
+        if [ ! -e "${mount_path}" ]; then
+            echo "  Skip (not found): ${mount_path}" >&2
+            continue
+        fi
+
         if [ "${runtime}" = "enroot" ]; then
             flags="${flags} -m ${mount_path}:${mount_path}"
         else
