@@ -230,6 +230,167 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     wait ${kasmvnc_container_pid}
 
 # =============================================================================
+# KasmProxy Mode (native VNC + containerized proxy)
+# =============================================================================
+elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
+    echo "Starting KasmProxy Mode..."
+    echo "Native VNC + containerized proxy"
+
+    # Read kasmproxy settings
+    kasmproxy_path=$(cat "${JOB_DIR}/KASMPROXY_CONTAINER_PATH" 2>/dev/null || echo "/mnt/data/containers/kasmproxy.sqsh")
+    kasm_port=$(cat "${JOB_DIR}/KASMPROXY_KASM_PORT" 2>/dev/null || echo "8443")
+
+    # Verify kasmproxy container exists
+    if [ ! -f "${kasmproxy_path}" ]; then
+        echo "ERROR: KasmProxy container not found at ${kasmproxy_path}" >&2
+        exit 1
+    fi
+    echo "KasmProxy container: ${kasmproxy_path}"
+    echo "KasmVNC port: ${kasm_port}"
+
+    # Get service port for nginx
+    service_port=$(pw agent open-port)
+    if [ -z "${service_port}" ]; then
+        echo "ERROR: Failed to allocate service port" >&2
+        exit 1
+    fi
+    echo "Service port: ${service_port}"
+
+    # Build BASE_PATH
+    BASE_PATH="/me/session/${resource_user}/${PW_SESSION_NAME}/"
+    echo "BASE_PATH: ${BASE_PATH}"
+
+    # =========================================================================
+    # Step 1: Detect and start native VNC
+    # =========================================================================
+    echo "Detecting native VNC server..."
+
+    # Try to find vncserver in PATH
+    service_vnc_exec=$(which vncserver 2>/dev/null || true)
+
+    # Detect VNC type
+    service_vnc_type=""
+    if [ -n "${service_vnc_exec}" ] && [ -f "${service_vnc_exec}" ]; then
+        service_vnc_type=$(${service_vnc_exec} -list 2>/dev/null | grep -oP '(TigerVNC|TurboVNC|KasmVNC)' || echo "")
+    fi
+
+    if [ -z "${service_vnc_type}" ]; then
+        echo "ERROR: No native VNC server found (kasmvncserver, tigervnc, or turbovnc required)" >&2
+        exit 1
+    fi
+
+    echo "Detected VNC: ${service_vnc_type}"
+
+    # Find available display
+    find_available_display_kasmproxy() {
+        local minPort=5901
+        local maxPort=5999
+
+        for port in $(seq ${minPort} ${maxPort} | shuf); do
+            out=$(netstat -aln 2>/dev/null | grep LISTEN | grep ${port} || true)
+            displayNumber=${port: -2}
+            XdisplayNumber=$(echo ${displayNumber} | sed 's/^0*//')
+
+            if [ -z "${out}" ] && ! [ -e /tmp/.X11-unix/X${XdisplayNumber} ] 2>/dev/null && ! [ -e /tmp/.X${XdisplayNumber}-lock ] 2>/dev/null; then
+                portFile=/tmp/${port}.port.used
+                if ! [ -f "${portFile}" ]; then
+                    touch ${portFile}
+                    echo "${port}"
+                    return 0
+                fi
+            fi
+        done
+        return 1
+    }
+
+    displayPort=$(find_available_display_kasmproxy)
+    if [ -z "${displayPort}" ]; then
+        echo "ERROR: No available display port found" >&2
+        exit 1
+    fi
+
+    displayNumber=${displayPort: -2}
+    DISPLAY=:$(echo ${displayNumber} | sed 's/^0*//')
+    XdisplayNumber=$(echo ${displayNumber} | sed 's/^0*//')
+    echo "Display: ${DISPLAY}"
+
+    # Start native VNC based on type
+    mkdir -p ${HOME}/.vnc
+    echo "Starting native VNC server on display ${DISPLAY}..."
+
+    if [[ "${service_vnc_type}" == "KasmVNC" ]]; then
+        # KasmVNC with websocket
+        ${service_vnc_exec} ${DISPLAY} -websocketPort ${kasm_port} &
+        vnc_pid=$!
+    else
+        # TigerVNC or TurboVNC
+        ${service_vnc_exec} ${DISPLAY} &
+        vnc_pid=$!
+    fi
+
+    echo "Native VNC started with PID ${vnc_pid}"
+    sleep 3  # Allow VNC to start
+
+    # =========================================================================
+    # Step 2: Start KasmProxy container
+    # =========================================================================
+    echo "Starting KasmProxy container..."
+
+    # Create kasmproxy container instance if needed
+    if ! enroot list 2>/dev/null | grep -q "^kasmproxy$"; then
+        echo "Creating kasmproxy container instance..."
+        enroot create --name kasmproxy "${kasmproxy_path}"
+    else
+        echo "KasmProxy container instance already exists"
+    fi
+
+    # Start kasmproxy container
+    echo "Command: enroot start --rw -e KASM_HOST=localhost -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} kasmproxy /usr/local/bin/run_nginx_proxy.sh"
+    enroot start --rw \
+        -e KASM_HOST=localhost \
+        -e KASM_PORT=${kasm_port} \
+        -e NGINX_PORT=${service_port} \
+        -e BASE_PATH="${BASE_PATH}" \
+        kasmproxy /usr/local/bin/run_nginx_proxy.sh &
+    kasmproxy_pid=$!
+    echo "KasmProxy container started with PID ${kasmproxy_pid}"
+
+    # Cleanup function
+    cleanup_kasmproxy() {
+        echo "$(date) Stopping KasmProxy mode..."
+        if [ -n "${kasmproxy_pid:-}" ]; then
+            kill ${kasmproxy_pid} 2>/dev/null || true
+        fi
+        if [ -n "${vnc_pid:-}" ]; then
+            kill ${vnc_pid} 2>/dev/null || true
+        fi
+        vncserver -kill ${DISPLAY} 2>/dev/null || true
+    }
+    trap cleanup_kasmproxy EXIT INT TERM
+
+    # Write coordination files
+    sleep 3  # Allow proxy to start
+    echo "Writing coordination files to ${JOB_DIR}..."
+    hostname > "${JOB_DIR}/HOSTNAME"
+    echo "${service_port}" > "${JOB_DIR}/SESSION_PORT"
+
+    sync
+    touch "${JOB_DIR}/job.started"
+
+    echo "=========================================="
+    echo "KasmProxy Desktop Service is RUNNING!"
+    echo "=========================================="
+    echo "HOSTNAME: $(cat ${JOB_DIR}/HOSTNAME)"
+    echo "SESSION_PORT: $(cat ${JOB_DIR}/SESSION_PORT)"
+    echo "BASE_PATH: ${BASE_PATH}"
+    echo "VNC Display: ${DISPLAY}"
+    echo "VNC Type: ${service_vnc_type}"
+    echo "=========================================="
+
+    # Wait for proxy container to exit
+    wait ${kasmproxy_pid}
+
+# =============================================================================
 # Native VNC Mode (existing behavior)
 # =============================================================================
 else
