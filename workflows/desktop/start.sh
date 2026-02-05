@@ -236,6 +236,11 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
     echo "Starting KasmProxy Mode..."
     echo "Native VNC + containerized proxy"
 
+    # Set up temp home directory early to avoid network filesystem issues
+    VNC_HOME="/tmp/${USER}-vnchome"
+    mkdir -p "${VNC_HOME}/.vnc"
+    echo "VNC HOME: ${VNC_HOME}"
+
     # Read kasmproxy settings
     kasmproxy_path=$(cat "${JOB_DIR}/KASMPROXY_CONTAINER_PATH" 2>/dev/null || echo "/mnt/data/containers/kasmproxy.sqsh")
     kasm_port=$(cat "${JOB_DIR}/KASMPROXY_KASM_PORT" 2>/dev/null || echo "8443")
@@ -315,18 +320,87 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
     echo "Display: ${DISPLAY}"
 
     # Start native VNC based on type
-    # Use temp HOME to avoid issues with network home directories
-    VNC_HOME="/tmp/${USER}-vnchome"
-    mkdir -p "${VNC_HOME}/.vnc"
     echo "Starting native VNC server on display ${DISPLAY}..."
-    echo "VNC HOME: ${VNC_HOME}"
 
     if [[ "${service_vnc_type}" == "KasmVNC" ]]; then
-        # KasmVNC with websocket
-        HOME="${VNC_HOME}" ${service_vnc_exec} ${DISPLAY} -websocketPort ${kasm_port} &
+        # KasmVNC needs xstartup and user setup
+        # Create xstartup for desktop environment detection
+        XSTARTUP_PATH="${VNC_HOME}/.vnc/xstartup"
+        cat > "${XSTARTUP_PATH}" <<'KASMEOF'
+#!/bin/sh
+set -eu
+
+detect_desktop_env() {
+    if command -v cinnamon-session >/dev/null 2>&1; then
+        echo "cinnamon"
+    elif command -v mate-session >/dev/null 2>&1; then
+        echo "mate"
+    elif command -v startlxde >/dev/null 2>&1; then
+        echo "lxde"
+    elif command -v xfce4-session >/dev/null 2>&1; then
+        echo "xfce"
+    elif command -v gnome-session >/dev/null 2>&1; then
+        echo "gnome"
+    else
+        echo "xfce"
+    fi
+}
+
+de="$(detect_desktop_env)"
+echo "*** running $de desktop ***"
+
+case "$de" in
+cinnamon)
+    export LIBGL_ALWAYS_SOFTWARE=1
+    export CLUTTER_BACKEND=x11
+    export GDK_BACKEND=x11
+    exec dbus-run-session -- cinnamon-session
+    ;;
+mate)
+    exec mate-session
+    ;;
+lxde)
+    exec startlxde
+    ;;
+xfce)
+    exec xfce4-session
+    ;;
+gnome)
+    export XDG_CURRENT_DESKTOP=GNOME
+    export XDG_SESSION_TYPE=x11
+    export GDK_BACKEND=x11
+    exec dbus-run-session -- gnome-session --session=gnome
+    ;;
+*)
+    exec xfce4-session
+    ;;
+esac
+KASMEOF
+        chmod +x "${XSTARTUP_PATH}"
+
+        # KasmVNC with websocket - use disableBasicAuth so proxy can connect
+        # Pipe "2" to select "Start without write user" if prompted
+        echo "Starting KasmVNC with websocket port ${kasm_port}..."
+        (
+            export HOME="${VNC_HOME}"
+            echo "2" | ${service_vnc_exec} ${DISPLAY} \
+                -disableBasicAuth \
+                -xstartup "${XSTARTUP_PATH}" \
+                -websocketPort ${kasm_port} \
+                -rfbport ${displayPort}
+        ) &
         vnc_pid=$!
     else
-        # TigerVNC or TurboVNC
+        # TigerVNC or TurboVNC - create basic xstartup
+        XSTARTUP_PATH="${VNC_HOME}/.vnc/xstartup"
+        cat > "${XSTARTUP_PATH}" <<'EOF'
+#!/bin/sh
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+/etc/X11/xinit/xinitrc
+EOF
+        chmod +x "${XSTARTUP_PATH}"
+
         HOME="${VNC_HOME}" ${service_vnc_exec} ${DISPLAY} &
         vnc_pid=$!
     fi
