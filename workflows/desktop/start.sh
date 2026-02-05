@@ -66,13 +66,42 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     fi
     echo "Container runtime: ${container_runtime}"
 
-    # Get service port
+    # Get service port (nginx external port)
     service_port=$(pw agent open-port)
     if [ -z "${service_port}" ]; then
         echo "ERROR: Failed to allocate service port" >&2
         exit 1
     fi
     echo "Service port: ${service_port}"
+
+    # Get KasmVNC internal websocket port
+    kasm_port=$(pw agent open-port)
+    if [ -z "${kasm_port}" ]; then
+        echo "ERROR: Failed to allocate KasmVNC port" >&2
+        exit 1
+    fi
+    echo "KasmVNC websocket port: ${kasm_port}"
+
+    # Find available VNC display (5901-5999 range)
+    find_available_vnc_display() {
+        for display_num in $(seq 1 99 | shuf); do
+            local port=$((5900 + display_num))
+            if ! netstat -tuln 2>/dev/null | grep -q ":${port} " && \
+               ! [ -e "/tmp/.X11-unix/X${display_num}" ] && \
+               ! [ -e "/tmp/.X${display_num}-lock" ]; then
+                echo "${display_num}"
+                return 0
+            fi
+        done
+        echo "1"  # Fallback to :1
+    }
+    vnc_display=$(find_available_vnc_display)
+    echo "VNC display: :${vnc_display}"
+
+    # Kill any stale VNC sessions for this user
+    echo "Cleaning up stale VNC sessions..."
+    pkill -u $(whoami) -f "Xvnc.*:${vnc_display}" 2>/dev/null || true
+    rm -f "/tmp/.X11-unix/X${vnc_display}" "/tmp/.X${vnc_display}-lock" 2>/dev/null || true
 
     # Build BASE_PATH for the container
     BASE_PATH="/me/session/${resource_user}/${PW_SESSION_NAME}/"
@@ -84,6 +113,9 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
         if [ -n "${kasmvnc_container_pid:-}" ]; then
             kill ${kasmvnc_container_pid} 2>/dev/null || true
         fi
+        # Clean up VNC display
+        pkill -u $(whoami) -f "Xvnc.*:${vnc_display}" 2>/dev/null || true
+        rm -f "/tmp/.X11-unix/X${vnc_display}" "/tmp/.X${vnc_display}-lock" 2>/dev/null || true
     }
     trap cleanup_kasmvnc_container EXIT INT TERM
 
@@ -134,13 +166,14 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
 
         # Start Enroot container (GPU support is enabled by default in Enroot)
         echo "Starting Enroot container..."
-        echo "Command: enroot start --rw ${ENROOT_MOUNT_FLAG} -e HOME=/tmp/${USER}-kasmhome -e BASE_PATH=${BASE_PATH} -e NGINX_PORT=${service_port} -e KASM_PORT=8590 ${ENROOT_CONTAINER_NAME} /usr/local/bin/run_kasm_nginx.sh"
+        echo "Command: enroot start --rw ${ENROOT_MOUNT_FLAG} -e HOME=/tmp/${USER}-kasmhome -e BASE_PATH=${BASE_PATH} -e NGINX_PORT=${service_port} -e KASM_PORT=${kasm_port} -e VNC_DISPLAY=${vnc_display} ${ENROOT_CONTAINER_NAME} /usr/local/bin/run_kasm_nginx.sh"
         enroot start --rw \
             ${ENROOT_MOUNT_FLAG} \
             -e HOME=/tmp/${USER}-kasmhome \
             -e BASE_PATH="${BASE_PATH}" \
             -e NGINX_PORT="${service_port}" \
-            -e KASM_PORT=8590 \
+            -e KASM_PORT="${kasm_port}" \
+            -e VNC_DISPLAY="${vnc_display}" \
             "${ENROOT_CONTAINER_NAME}" /usr/local/bin/run_kasm_nginx.sh &
         kasmvnc_container_pid=$!
         echo "Enroot container started with PID ${kasmvnc_container_pid}"
@@ -194,7 +227,8 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             ${SINGULARITY_MOUNT_FLAG} \
             --env BASE_PATH="${BASE_PATH}" \
             --env NGINX_PORT="${service_port}" \
-            --env KASM_PORT=8590 \
+            --env KASM_PORT="${kasm_port}" \
+            --env VNC_DISPLAY="${vnc_display}" \
             --bind /etc/passwd:/etc/passwd:ro \
             --bind /etc/group:/etc/group:ro \
             "${KASMVNC_CONTAINER_SIF}" &
