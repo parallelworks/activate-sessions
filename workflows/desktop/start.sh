@@ -411,32 +411,17 @@ EOF
 
         # KasmVNC with websocket - use disableBasicAuth so proxy can connect
         echo "Starting KasmVNC with websocket port ${kasm_port}..."
-
-        # Create a wrapper script to run vncserver in isolation
-        # (vncserver seems to affect the parent shell somehow)
-        VNC_WRAPPER="/tmp/vnc_wrapper_$$.sh"
-        cat > "${VNC_WRAPPER}" << VNCWRAPPER
-#!/bin/bash
-export HOME="${VNC_HOME}"
-echo "2" | ${service_vnc_exec} ${DISPLAY} \\
-    -disableBasicAuth \\
-    -xstartup "${XSTARTUP_PATH}" \\
-    -websocketPort ${kasm_port} \\
-    -rfbport ${displayPort}
-VNCWRAPPER
-        chmod +x "${VNC_WRAPPER}"
-
-        # Run wrapper detached with nohup
-        nohup "${VNC_WRAPPER}" > /tmp/vnc_startup_$$.log 2>&1 &
-        vnc_wrapper_pid=$!
-        echo "DEBUG: VNC wrapper started with PID ${vnc_wrapper_pid}"
-
-        # Wait briefly for vncserver to start
-        sleep 5
-        echo "DEBUG: VNC startup log:"
-        cat /tmp/vnc_startup_$$.log 2>/dev/null || true
-
-        vnc_pid=""  # vncserver daemonizes, track via vncserver -kill later
+        # Run vncserver backgrounded - it will daemonize anyway
+        # Use subshell to isolate any shell effects
+        (
+            export HOME="${VNC_HOME}"
+            echo "2" | ${service_vnc_exec} ${DISPLAY} \
+                -disableBasicAuth \
+                -xstartup "${XSTARTUP_PATH}" \
+                -websocketPort ${kasm_port} \
+                -rfbport ${displayPort}
+        ) &
+        echo "VNC server starting in background..."
     else
         # TigerVNC or TurboVNC - create basic xstartup
         XSTARTUP_PATH="${VNC_HOME}/.vnc/xstartup"
@@ -452,24 +437,25 @@ EOF
         vnc_pid=$!
     fi
 
-    echo "Native VNC started with PID ${vnc_pid}"
-    echo "DEBUG: Sleeping 3 seconds..."
-    sleep 3  # Allow VNC to start
-    echo "DEBUG: Sleep complete, starting proxy setup..."
+    echo "VNC server launched"
+
+    # Give VNC a moment to start
+    sleep 5
 
     # =========================================================================
-    # Step 2: Start KasmProxy container
+    # Step 2: Write coordination files BEFORE starting proxy
     # =========================================================================
-    echo "DEBUG: Entering proxy container setup..."
+    echo "Writing coordination files to ${JOB_DIR}..."
+    hostname > "${JOB_DIR}/HOSTNAME"
+    echo "${service_port}" > "${JOB_DIR}/SESSION_PORT"
+    sync
+    touch "${JOB_DIR}/job.started"
+    echo "Coordination files written"
+
+    # =========================================================================
+    # Step 3: Start KasmProxy container
+    # =========================================================================
     echo "Starting KasmProxy container..."
-
-    # Create kasmproxy container instance if needed
-    if ! enroot list 2>/dev/null | grep -q "^kasmproxy$"; then
-        echo "Creating kasmproxy container instance..."
-        enroot create --name kasmproxy "${kasmproxy_path}"
-    else
-        echo "KasmProxy container instance already exists"
-    fi
 
     # Start kasmproxy container via enroot (container OS now has nvidia support)
     KASMPROXY_CONTAINER_NAME="kasmproxy"
@@ -587,39 +573,12 @@ WRAPPER_EOF
     KASM_HOST_IP=$(hostname -I | awk '{print $1}')
     echo "Host IP for KasmVNC: ${KASM_HOST_IP}"
 
-    echo "Starting kasmproxy container via enroot..."
-    echo "Command: enroot start --rw -m ${PROXY_WRAPPER}:/run_proxy.sh -e KASM_HOST=${KASM_HOST_IP} -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} ${KASMPROXY_CONTAINER_NAME} /run_proxy.sh"
-    enroot start --rw \
-        -m "${PROXY_WRAPPER}:/run_proxy.sh" \
-        -e "KASM_HOST=${KASM_HOST_IP}" \
-        -e KASM_PORT=${kasm_port} \
-        -e NGINX_PORT=${service_port} \
-        -e "BASE_PATH=${BASE_PATH}" \
-        "${KASMPROXY_CONTAINER_NAME}" /run_proxy.sh &
-    kasmproxy_pid=$!
-    echo "KasmProxy container started with PID ${kasmproxy_pid}"
-
-    # Cleanup function
+    # Cleanup function (kill VNC on exit)
     cleanup_kasmproxy() {
         echo "$(date) Stopping KasmProxy mode..."
-        if [ -n "${kasmproxy_pid:-}" ]; then
-            kill ${kasmproxy_pid} 2>/dev/null || true
-        fi
-        if [ -n "${vnc_pid:-}" ]; then
-            kill ${vnc_pid} 2>/dev/null || true
-        fi
-        vncserver -kill ${DISPLAY} 2>/dev/null || true
+        HOME="${VNC_HOME}" vncserver -kill ${DISPLAY} 2>/dev/null || true
     }
     trap cleanup_kasmproxy EXIT INT TERM
-
-    # Write coordination files
-    sleep 3  # Allow proxy to start
-    echo "Writing coordination files to ${JOB_DIR}..."
-    hostname > "${JOB_DIR}/HOSTNAME"
-    echo "${service_port}" > "${JOB_DIR}/SESSION_PORT"
-
-    sync
-    touch "${JOB_DIR}/job.started"
 
     echo "=========================================="
     echo "KasmProxy Desktop Service is RUNNING!"
@@ -631,10 +590,18 @@ WRAPPER_EOF
     echo "VNC Type: ${service_vnc_type}"
     echo "=========================================="
 
-    # Wait for proxy container to exit
-    wait ${kasmproxy_pid}
-    exit_code=$?
-    echo "KasmProxy container exited with code: ${exit_code}"
+    # Start enroot in FOREGROUND (blocking) - script waits here
+    echo "Starting kasmproxy container via enroot (foreground)..."
+    echo "Command: enroot start --rw -m ${PROXY_WRAPPER}:/run_proxy.sh -e KASM_HOST=${KASM_HOST_IP} -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} ${KASMPROXY_CONTAINER_NAME} /run_proxy.sh"
+    enroot start --rw \
+        -m "${PROXY_WRAPPER}:/run_proxy.sh" \
+        -e "KASM_HOST=${KASM_HOST_IP}" \
+        -e KASM_PORT=${kasm_port} \
+        -e NGINX_PORT=${service_port} \
+        -e "BASE_PATH=${BASE_PATH}" \
+        "${KASMPROXY_CONTAINER_NAME}" /run_proxy.sh
+
+    echo "KasmProxy container exited"
 
 # =============================================================================
 # Native VNC Mode (existing behavior)
