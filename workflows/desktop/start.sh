@@ -453,11 +453,14 @@ EOF
 
     # Start kasmproxy container via srun (pyxis handles nvidia better)
     echo "Starting kasmproxy container via srun..."
-    echo "Command: srun --overlap --gpus=0 --container-image=${kasmproxy_path} --container-env=KASM_HOST=localhost,KASM_PORT=${kasm_port},NGINX_PORT=${service_port},BASE_PATH=${BASE_PATH} /usr/local/bin/run_nginx_proxy.sh"
+    echo "Command: srun --overlap --gpus=0 --container-image=${kasmproxy_path} --container-env=KASM_HOST=localhost --container-env=KASM_PORT=${kasm_port} --container-env=NGINX_PORT=${service_port} --container-env=BASE_PATH=${BASE_PATH} /usr/local/bin/run_nginx_proxy.sh"
     srun --overlap \
         --gpus=0 \
         --container-image="${kasmproxy_path}" \
-        --container-env="KASM_HOST=localhost,KASM_PORT=${kasm_port},NGINX_PORT=${service_port},BASE_PATH=${BASE_PATH}" \
+        --container-env="KASM_HOST=localhost" \
+        --container-env="KASM_PORT=${kasm_port}" \
+        --container-env="NGINX_PORT=${service_port}" \
+        --container-env="BASE_PATH=${BASE_PATH}" \
         /usr/local/bin/run_nginx_proxy.sh &
     kasmproxy_pid=$!
     echo "KasmProxy container started with PID ${kasmproxy_pid}"
