@@ -463,14 +463,113 @@ EOF
     echo "Creating fresh kasmproxy container instance..."
     enroot create --name "${KASMPROXY_CONTAINER_NAME}" "${kasmproxy_path}"
 
+    # Create a wrapper script that sets env vars and runs nginx directly
+    # (avoids the pkill/killall in the container script that terminates enroot)
+    PROXY_WRAPPER="/tmp/kasmproxy_wrapper_$$.sh"
+    cat > "${PROXY_WRAPPER}" << 'WRAPPER_EOF'
+#!/bin/bash
+set -e
+
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
+
+KASM_HOST="${KASM_HOST:-127.0.0.1}"
+KASM_PORT="${KASM_PORT:-8443}"
+NGINX_PORT="${NGINX_PORT:-8080}"
+BASE_PATH="${BASE_PATH:-/}"
+
+# Normalize base path
+[[ "$BASE_PATH" != /* ]] && BASE_PATH="/$BASE_PATH"
+[[ "$BASE_PATH" != "/" && "$BASE_PATH" == */ ]] && BASE_PATH="${BASE_PATH%/}"
+
+echo "==========================================="
+echo "  KasmProxy Starting"
+echo "==========================================="
+echo "[INFO] KasmVNC backend: ${KASM_HOST}:${KASM_PORT}"
+echo "[INFO] Nginx port: ${NGINX_PORT}"
+echo "[INFO] Base path: ${BASE_PATH}"
+
+mkdir -p /tmp/nginx_client_body /tmp/nginx_proxy /tmp/nginx_fastcgi /tmp/nginx_uwsgi /tmp/nginx_scgi
+
+# Generate nginx config
+cat > /tmp/nginx_proxy.conf << EOF
+worker_processes 1;
+pid /tmp/nginx.pid;
+error_log /tmp/nginx_error.log;
+
+events { worker_connections 1024; }
+
+http {
+    default_type application/octet-stream;
+    access_log /tmp/nginx_access.log;
+    client_body_temp_path /tmp/nginx_client_body;
+    proxy_temp_path /tmp/nginx_proxy;
+    fastcgi_temp_path /tmp/nginx_fastcgi;
+    uwsgi_temp_path /tmp/nginx_uwsgi;
+    scgi_temp_path /tmp/nginx_scgi;
+
+    map \$http_upgrade \$connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+
+    server {
+        listen ${NGINX_PORT};
+        server_name _;
+
+        location / {
+            proxy_pass https://${KASM_HOST}:${KASM_PORT}/;
+            proxy_ssl_verify off;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection \$connection_upgrade;
+            proxy_set_header Host \$host;
+            proxy_read_timeout 61s;
+            proxy_buffering off;
+        }
+EOF
+
+if [ "$BASE_PATH" != "/" ]; then
+    cat >> /tmp/nginx_proxy.conf << EOF
+
+        location = ${BASE_PATH} {
+            return 301 \$scheme://\$host\$request_uri/;
+        }
+
+        location ${BASE_PATH}/ {
+            proxy_pass https://${KASM_HOST}:${KASM_PORT}/;
+            proxy_ssl_verify off;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection \$connection_upgrade;
+            proxy_set_header Host \$host;
+            proxy_read_timeout 61s;
+            proxy_buffering off;
+        }
+EOF
+fi
+
+echo "    }
+}" >> /tmp/nginx_proxy.conf
+
+echo "[INFO] Starting nginx..."
+exec nginx -g 'daemon off;' -c /tmp/nginx_proxy.conf
+WRAPPER_EOF
+    chmod +x "${PROXY_WRAPPER}"
+
+    # Get host IP for container to connect to (localhost won't work from inside container)
+    KASM_HOST_IP=$(hostname -I | awk '{print $1}')
+    echo "Host IP for KasmVNC: ${KASM_HOST_IP}"
+
     echo "Starting kasmproxy container via enroot..."
-    echo "Command: enroot start --rw -e KASM_HOST=localhost -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} ${KASMPROXY_CONTAINER_NAME} /usr/local/bin/run_nginx_proxy.sh"
+    echo "Command: enroot start --rw -m ${PROXY_WRAPPER}:/run_proxy.sh -e KASM_HOST=${KASM_HOST_IP} -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} ${KASMPROXY_CONTAINER_NAME} /run_proxy.sh"
     enroot start --rw \
-        -e KASM_HOST=localhost \
+        -m "${PROXY_WRAPPER}:/run_proxy.sh" \
+        -e "KASM_HOST=${KASM_HOST_IP}" \
         -e KASM_PORT=${kasm_port} \
         -e NGINX_PORT=${service_port} \
         -e "BASE_PATH=${BASE_PATH}" \
-        "${KASMPROXY_CONTAINER_NAME}" /usr/local/bin/run_nginx_proxy.sh &
+        "${KASMPROXY_CONTAINER_NAME}" /run_proxy.sh &
     kasmproxy_pid=$!
     echo "KasmProxy container started with PID ${kasmproxy_pid}"
 
