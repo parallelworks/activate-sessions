@@ -452,10 +452,15 @@ EOF
     fi
 
     # Start kasmproxy container (disable NVIDIA - not needed for proxy)
-    # NVIDIA_VISIBLE_DEVICES=void tells enroot to skip the nvidia hook entirely
-    echo "Command: enroot start --rw -e NVIDIA_VISIBLE_DEVICES=void -e KASM_HOST=localhost -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} kasmproxy /usr/local/bin/run_nginx_proxy.sh"
+    # Temporarily disable the nvidia hook by moving it aside
+    NVIDIA_HOOK="/etc/enroot/hooks.d/98-nvidia.sh"
+    if [ -f "${NVIDIA_HOOK}" ]; then
+        echo "Temporarily disabling nvidia hook for proxy container..."
+        sudo mv "${NVIDIA_HOOK}" "${NVIDIA_HOOK}.disabled" 2>/dev/null || true
+    fi
+
+    echo "Command: enroot start --rw -e KASM_HOST=localhost -e KASM_PORT=${kasm_port} -e NGINX_PORT=${service_port} -e BASE_PATH=${BASE_PATH} kasmproxy /usr/local/bin/run_nginx_proxy.sh"
     enroot start --rw \
-        -e NVIDIA_VISIBLE_DEVICES=void \
         -e KASM_HOST=localhost \
         -e KASM_PORT=${kasm_port} \
         -e NGINX_PORT=${service_port} \
@@ -463,6 +468,11 @@ EOF
         kasmproxy /usr/local/bin/run_nginx_proxy.sh &
     kasmproxy_pid=$!
     echo "KasmProxy container started with PID ${kasmproxy_pid}"
+
+    # Re-enable the nvidia hook
+    if [ -f "${NVIDIA_HOOK}.disabled" ]; then
+        sudo mv "${NVIDIA_HOOK}.disabled" "${NVIDIA_HOOK}" 2>/dev/null || true
+    fi
 
     # Cleanup function
     cleanup_kasmproxy() {
