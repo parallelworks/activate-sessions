@@ -52,6 +52,9 @@ jobs:
           /p/cwfs
           /scratch
           /run/munge
+          /etc/pbs.conf
+          /var/spool/pbs
+          /opt/pbs
           ${{ inputs.desktop.container_mount_paths }}"
           export STARTUP_COMMAND="${{ inputs.desktop.startup_command }}"
           export PW_SESSION_NAME="${{ sessions.session }}"
@@ -353,5 +356,5 @@ jobs:
             type: textarea
             label: Additional Mount Paths
             placeholder: "/p/cwfs\n/archive/navy"
-            tooltip: "Extra directories to mount into the container (one per line). The following are auto-mounted if they exist: /p/home, /p/work, /p/work1, /p/app, /p/cwfs, /scratch, /run/munge"
+            tooltip: "Extra directories to mount into the container (one per line). Auto-mounted if they exist: /p/home, /p/work, /p/work1, /p/app, /p/cwfs, /scratch, /run/munge, /etc/pbs.conf, /var/spool/pbs, /opt/pbs"
             optional: true
