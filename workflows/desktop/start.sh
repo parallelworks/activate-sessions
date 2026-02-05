@@ -382,18 +382,22 @@ run_startup_command() {
 }
 
 detect_desktop_env() {
-    if command -v cinnamon-session >/dev/null 2>&1; then
+    # Prefer XFCE - it works best with KasmVNC
+    if command -v xfce4-session >/dev/null 2>&1; then
+        echo "xfce"
+    elif command -v cinnamon-session >/dev/null 2>&1; then
         echo "cinnamon"
     elif command -v mate-session >/dev/null 2>&1; then
         echo "mate"
     elif command -v startlxde >/dev/null 2>&1; then
         echo "lxde"
-    elif command -v gnome-session >/dev/null 2>&1; then
-        echo "gnome"
     elif command -v lxqt-session >/dev/null 2>&1; then
         echo "lxqt"
     elif command -v startplasma-x11 >/dev/null 2>&1 || command -v plasmashell >/dev/null 2>&1; then
         echo "kde"
+    elif command -v gnome-session >/dev/null 2>&1; then
+        # GNOME last - often has issues with VNC
+        echo "gnome"
     else
         echo "none"
     fi
@@ -426,6 +430,13 @@ configure_xfce_appearance() {
 }
 
 case "$de" in
+xfce)
+    # XFCE - preferred desktop for KasmVNC
+    echo "Starting XFCE desktop environment..."
+    # Configure appearance and run startup command after starting
+    (sleep 2 && configure_xfce_appearance && run_startup_command) &
+    exec dbus-run-session -- xfce4-session
+    ;;
 cinnamon)
     # Clean up stale Cinnamon processes that break restarts under VNC
     killall -q cinnamon cinnamon-session cinnamon-panel muffin nemo nemo-desktop || true
@@ -441,7 +452,7 @@ cinnamon)
     exec dbus-run-session -- cinnamon-session
     ;;
 mate)
-    exec mate-session
+    exec dbus-run-session -- mate-session
     ;;
 lxde)
     exec startlxde
@@ -462,9 +473,10 @@ kde)
     ;;
 *)
     # Safe fallback to XFCE (works well with KasmVNC)
+    echo "Unknown desktop '$de', falling back to XFCE..."
     # Configure appearance and run startup command after starting
     (sleep 2 && configure_xfce_appearance && run_startup_command) &
-    exec xfce4-session
+    exec dbus-run-session -- xfce4-session
     ;;
 esac
 KASMEOF
@@ -1113,18 +1125,22 @@ EOF
 set -eu
 
 detect_desktop_env() {
-    if command -v cinnamon-session >/dev/null 2>&1; then
+    # Prefer XFCE - it works best with KasmVNC
+    if command -v xfce4-session >/dev/null 2>&1; then
+        echo "xfce"
+    elif command -v cinnamon-session >/dev/null 2>&1; then
         echo "cinnamon"
     elif command -v mate-session >/dev/null 2>&1; then
         echo "mate"
     elif command -v startlxde >/dev/null 2>&1; then
         echo "lxde"
-    elif command -v gnome-session >/dev/null 2>&1; then
-        echo "gnome"
     elif command -v lxqt-session >/dev/null 2>&1; then
         echo "lxqt"
     elif command -v startplasma-x11 >/dev/null 2>&1 || command -v plasmashell >/dev/null 2>&1; then
         echo "kde"
+    elif command -v gnome-session >/dev/null 2>&1; then
+        # GNOME last - often has issues with VNC
+        echo "gnome"
     else
         echo "none"
     fi
@@ -1134,6 +1150,10 @@ detect_desktop_env() {
     echo "*** running $de desktop ***"
 
     case "$de" in
+    xfce)
+        # XFCE - preferred desktop for KasmVNC
+        exec dbus-run-session -- xfce4-session
+        ;;
     cinnamon)
         killall -q cinnamon cinnamon-session cinnamon-panel muffin nemo nemo-desktop 2>/dev/null || true
         export LIBGL_ALWAYS_SOFTWARE=1
@@ -1144,7 +1164,7 @@ detect_desktop_env() {
         exec dbus-run-session -- cinnamon-session
         ;;
     mate)
-        exec mate-session
+        exec dbus-run-session -- mate-session
         ;;
     lxde)
         exec startlxde
@@ -1164,7 +1184,8 @@ detect_desktop_env() {
         exec startplasma-x11
         ;;
     *)
-        exec startlxde
+        # Fallback to XFCE
+        exec dbus-run-session -- xfce4-session
         ;;
     esac
 KASMEOF
