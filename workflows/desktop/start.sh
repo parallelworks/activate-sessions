@@ -507,6 +507,8 @@ EOF
 
     # Wait for proxy container to exit
     wait ${kasmproxy_pid}
+    exit_code=$?
+    echo "KasmProxy container exited with code: ${exit_code}"
 
 # =============================================================================
 # Native VNC Mode (existing behavior)
