@@ -218,7 +218,7 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
         echo "${CONTAINER_MOUNT_PATHS}" > "${JOB_DIR}/CONTAINER_MOUNT_PATHS"
         echo "Mount paths:"
         echo "${CONTAINER_MOUNT_PATHS}" | while IFS= read -r p; do
-            [ -n "$p" ] && echo "  - $p"
+            [ -n "$p" ] && echo "  - $p" || true
         done
     fi
 
