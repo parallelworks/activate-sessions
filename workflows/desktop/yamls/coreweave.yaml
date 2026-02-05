@@ -44,7 +44,6 @@ jobs:
           set -e
           cd workflows/${{ inputs.workflow_dir }}
           export KASMPROXY_CONTAINER_PATH="${{ inputs.desktop.kasmproxy_container_path }}"
-          export KASMPROXY_KASM_PORT="${{ inputs.desktop.kasmproxy_kasm_port }}"
           export STARTUP_COMMAND="${{ inputs.desktop.startup_command }}"
           export PW_SESSION_NAME="${{ sessions.session }}"
           bash setup.sh
@@ -203,7 +202,4 @@ jobs:
             default: "/mnt/data/containers/kasmproxy.sqsh"
             hidden: true
 
-          kasmproxy_kasm_port:
-            type: number
-            default: 8443
-            hidden: true
+

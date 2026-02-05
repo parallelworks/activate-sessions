@@ -277,10 +277,15 @@ elif [[ "${vnc_mode}" == "kasmproxy" ]]; then
 
     # Read kasmproxy settings
     kasmproxy_runtime=$(cat "${JOB_DIR}/KASMPROXY_RUNTIME" 2>/dev/null || echo "enroot")
-    kasm_port=$(cat "${JOB_DIR}/KASMPROXY_KASM_PORT" 2>/dev/null || echo "8443")
-
     echo "KasmProxy runtime: ${kasmproxy_runtime}"
-    echo "KasmVNC port: ${kasm_port}"
+
+    # Dynamically allocate KasmVNC websocket port
+    kasm_port=$(pw agent open-port)
+    if [ -z "${kasm_port}" ]; then
+        echo "ERROR: Failed to allocate KasmVNC port" >&2
+        exit 1
+    fi
+    echo "KasmVNC websocket port: ${kasm_port}"
 
     # Read container path based on runtime
     if [[ "${kasmproxy_runtime}" == "singularity" ]]; then
