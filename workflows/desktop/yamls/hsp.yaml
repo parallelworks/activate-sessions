@@ -299,6 +299,7 @@ jobs:
       desktop:
         type: group
         label: Desktop Settings
+        collapsed: true
         items:
           vnc_mode:
             type: string

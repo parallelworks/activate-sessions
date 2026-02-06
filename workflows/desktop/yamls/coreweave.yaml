@@ -199,11 +199,9 @@ jobs:
             optional: true
 
           container_mount_paths:
-            type: textarea
-            label: Container Mount Paths
-            placeholder: "/mnt/data"
-            tooltip: Directories to mount into the container (one per line)
-            optional: true
+            type: string
+            default: ""
+            hidden: true
 
           kasmproxy_container_path:
             type: string
