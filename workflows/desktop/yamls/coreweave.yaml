@@ -45,7 +45,8 @@ jobs:
           cd workflows/${{ inputs.workflow_dir }}
           export KASM_CONTAINER_RUNTIME="enroot"
           export KASM_ENROOT_DIR="${{ inputs.desktop.kasmvnc_enroot_container_dir }}"
-          export CONTAINER_MOUNT_PATHS="/mnt/data
+          export CONTAINER_MOUNT_PATHS="/mnt/home
+          /mnt/data
           ${{ inputs.desktop.container_mount_paths }}"
           export STARTUP_COMMAND="${{ inputs.desktop.startup_command }}"
           export PW_SESSION_NAME="${{ sessions.session }}"
