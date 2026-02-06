@@ -128,8 +128,12 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     elif [[ "${desktop_kasmvnc_container_source:-path}" == "git_lfs" ]]; then
         install_git_lfs
 
+        # Derive git path and SIF name from OS choice
+        git_path="kasmvnc-${desktop_kasmvnc_os:-rocky9}"
+        sif_name="${git_path}.sif"
+
         # Pull KasmVNC container via sparse checkout + Git LFS
-        KASMVNC_CONTAINER_SIF="${CONTAINER_DIR}/kasmvnc.sif"
+        KASMVNC_CONTAINER_SIF="${CONTAINER_DIR}/${sif_name}"
         if [ ! -f "${KASMVNC_CONTAINER_SIF}" ] || [ ! -s "${KASMVNC_CONTAINER_SIF}" ]; then
             echo "Fetching KasmVNC container via sparse checkout..."
 
@@ -143,7 +147,6 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             cd "${TMP_CONTAINER_DIR}"
             git init
             git_repo="${desktop_kasmvnc_git_repo:-https://github.com/parallelworks/singularity-containers.git}"
-            git_path="${desktop_kasmvnc_git_path:-kasmvnc}"
             git_branch="${desktop_kasmvnc_git_branch:-main}"
             git remote add origin "${git_repo}"
             git config core.sparseCheckout true
@@ -156,13 +159,13 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             # Join SIF parts if split, otherwise just copy
             mkdir -p "${CONTAINER_DIR}"
 
-            # Check if there are split parts (kasmvnc.sif.00, kasmvnc.sif.01, etc.)
-            if compgen -G "${git_path}/kasmvnc.sif.*" > /dev/null 2>&1; then
+            # Check if there are split parts (e.g., kasmvnc-rocky9.sif.00, .01, etc.)
+            if compgen -G "${git_path}/${sif_name}.*" > /dev/null 2>&1; then
                 echo "Joining SIF parts..."
-                cat ${git_path}/kasmvnc.sif.* > "${CONTAINER_DIR}/kasmvnc.sif"
-            elif [ -f "${git_path}/kasmvnc.sif" ]; then
+                cat ${git_path}/${sif_name}.* > "${KASMVNC_CONTAINER_SIF}"
+            elif [ -f "${git_path}/${sif_name}" ]; then
                 echo "Copying KasmVNC container..."
-                cp "${git_path}/kasmvnc.sif" "${CONTAINER_DIR}/kasmvnc.sif"
+                cp "${git_path}/${sif_name}" "${KASMVNC_CONTAINER_SIF}"
             else
                 echo "WARNING: KasmVNC container not found after pull" >&2
             fi

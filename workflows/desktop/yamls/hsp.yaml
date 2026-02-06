@@ -341,9 +341,20 @@ jobs:
             default: "https://github.com/parallelworks/singularity-containers.git"
             hidden: true
 
+          kasmvnc_os:
+            type: dropdown
+            label: Operating System
+            default: rocky9
+            tooltip: Choose the operating system for the KasmVNC container
+            options:
+              - label: "Rocky Linux 9"
+                value: rocky9
+              - label: "Ubuntu 22.04"
+                value: ubuntu
+
           kasmvnc_git_path:
             type: string
-            default: "kasmvnc"
+            default: "kasmvnc-rocky9"
             hidden: true
 
           startup_command:
