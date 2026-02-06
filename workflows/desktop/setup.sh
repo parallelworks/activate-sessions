@@ -120,7 +120,8 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
 
     # Handle Enroot runtime
     if [[ "${container_runtime}" == "enroot" ]]; then
-        enroot_path="${KASM_ENROOT_PATH:-/mnt/data/containers/kasmvnc.sqsh}"
+        enroot_dir="${KASM_ENROOT_DIR:-/mnt/data/containers}"
+        enroot_path="${enroot_dir}/kasmvnc-${desktop_kasmvnc_os:-rocky9}.sqsh"
         echo "Using Enroot container: ${enroot_path}"
         echo "${enroot_path}" > "${JOB_DIR}/KASMVNC_ENROOT_PATH"
 
