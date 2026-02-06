@@ -208,10 +208,8 @@ jobs:
 
           kasmvnc_enroot_container_dir:
             type: string
-            label: Enroot Container Directory
             default: "/mnt/data/containers"
-            placeholder: "/mnt/data/containers"
-            tooltip: Directory containing the KasmVNC Enroot container (.sqsh file)
+            hidden: true
 
           startup_command:
             type: string
@@ -221,8 +219,6 @@ jobs:
             optional: true
 
           container_mount_paths:
-            type: textarea
-            label: Additional Mount Paths
-            placeholder: "/mnt/shared"
-            tooltip: "Extra directories to mount into the container (one per line). Auto-mounted: /mnt/data"
-            optional: true
+            type: string
+            default: ""
+            hidden: true
