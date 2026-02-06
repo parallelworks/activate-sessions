@@ -226,11 +226,23 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
         KASMVNC_HOME="/tmp/${USER}-kasmhome"
         mkdir -p "${KASMVNC_HOME}"
 
+        # Build env flags from /etc/environment (host system variables)
+        ENROOT_ENV_FLAGS=""
+        if [ -f /etc/environment ]; then
+            while IFS= read -r line || [ -n "${line}" ]; do
+                line=$(echo "${line}" | xargs)
+                [ -z "${line}" ] && continue
+                [[ "${line}" == \#* ]] && continue
+                ENROOT_ENV_FLAGS="${ENROOT_ENV_FLAGS} -e ${line}"
+            done < /etc/environment
+        fi
+
         # Start Enroot container (GPU support is enabled by default in Enroot)
         echo "Starting Enroot container..."
         enroot start --rw \
             ${MOUNT_FLAGS} \
             -m ${KASMVNC_HOME}:/root \
+            ${ENROOT_ENV_FLAGS} \
             -e HOME=/root \
             -e BASE_PATH="${BASE_PATH}" \
             -e NGINX_PORT="${service_port}" \
@@ -290,6 +302,7 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             --env STARTUP_COMMAND="${STARTUP_COMMAND}" \
             --bind /etc/passwd:/etc/passwd:ro \
             --bind /etc/group:/etc/group:ro \
+            --bind /etc/environment:/etc/environment:ro \
             "${KASMVNC_CONTAINER_SIF}" &
         kasmvnc_container_pid=$!
         echo "Singularity container started with PID ${kasmvnc_container_pid}"
