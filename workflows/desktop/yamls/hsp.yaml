@@ -331,9 +331,9 @@ jobs:
           kasmvnc_bucket_path:
             type: string
             label: Container Path in Bucket
-            default: "kasmvnc.sif"
-            placeholder: "kasmvnc.sif"
-            tooltip: Path to the container file within the bucket
+            default: "kasmvnc-rocky9.sif"
+            placeholder: "kasmvnc-rocky9.sif"
+            tooltip: Path to the container file within the bucket (use kasmvnc-rocky9.sif or kasmvnc-ubuntu.sif)
             hidden: ${{ inputs.desktop.kasmvnc_container_source != 'bucket' }}
 
           kasmvnc_git_repo:
