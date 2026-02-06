@@ -269,9 +269,10 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             echo "GPU support disabled"
         fi
 
-        # Start Singularity container
+        # Start Singularity container (--writable-tmpfs allows writes to /var/log/nginx etc.)
         echo "Starting Singularity container..."
         singularity run \
+            --writable-tmpfs \
             ${GPU_FLAG} \
             ${MOUNT_FLAGS} \
             --env BASE_PATH="${BASE_PATH}" \
