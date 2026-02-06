@@ -183,6 +183,13 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
         MOUNT_FLAGS=$(build_mount_flags "${container_runtime}" "${JOB_DIR}/CONTAINER_MOUNT_PATHS")
     fi
 
+    # Read startup command (written by setup.sh)
+    STARTUP_COMMAND=""
+    if [ -f "${JOB_DIR}/STARTUP_COMMAND" ]; then
+        STARTUP_COMMAND=$(cat "${JOB_DIR}/STARTUP_COMMAND")
+        echo "Startup command: ${STARTUP_COMMAND}"
+    fi
+
     # =========================================================================
     # Enroot Runtime
     # =========================================================================
@@ -229,6 +236,7 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             -e NGINX_PORT="${service_port}" \
             -e KASM_PORT="${kasm_port}" \
             -e VNC_DISPLAY="${vnc_display}" \
+            -e STARTUP_COMMAND="${STARTUP_COMMAND}" \
             "${ENROOT_CONTAINER_NAME}" /usr/local/bin/run_kasm_nginx.sh &
         kasmvnc_container_pid=$!
         echo "Enroot container started with PID ${kasmvnc_container_pid}"
@@ -279,6 +287,7 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             --env NGINX_PORT="${service_port}" \
             --env KASM_PORT="${kasm_port}" \
             --env VNC_DISPLAY="${vnc_display}" \
+            --env STARTUP_COMMAND="${STARTUP_COMMAND}" \
             --bind /etc/passwd:/etc/passwd:ro \
             --bind /etc/group:/etc/group:ro \
             "${KASMVNC_CONTAINER_SIF}" &
