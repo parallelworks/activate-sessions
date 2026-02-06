@@ -45,7 +45,7 @@ jobs:
           cd workflows/${{ inputs.workflow_dir }}
           export KASM_BUCKET_URI="${{ inputs.desktop.kasmvnc_bucket.uri }}/${{ inputs.desktop.kasmvnc_bucket_path }}"
           export KASM_CONTAINER_RUNTIME="${{ inputs.desktop.kasmvnc_container_runtime }}"
-          export KASM_ENROOT_PATH="${{ inputs.desktop.kasmvnc_enroot_container_path }}"
+          export KASM_ENROOT_DIR="${{ inputs.desktop.kasmvnc_enroot_container_dir }}"
           export CONTAINER_MOUNT_PATHS="${{ inputs.desktop.container_mount_paths }}"
           export KASMPROXY_RUNTIME="${{ inputs.desktop.kasmproxy_runtime }}"
           export KASMPROXY_ENROOT_PATH="${{ inputs.desktop.kasmproxy_enroot_path }}"
@@ -401,12 +401,12 @@ jobs:
             default: "kasmvnc-rocky9"
             hidden: true
 
-          kasmvnc_enroot_container_path:
+          kasmvnc_enroot_container_dir:
             type: string
-            label: Enroot Container Path
-            default: "/mnt/data/containers/kasmvnc.sqsh"
-            placeholder: "/mnt/data/containers/kasmvnc.sqsh"
-            tooltip: Path to the Enroot container (.sqsh file)
+            label: Enroot Container Directory
+            default: "/mnt/data/containers"
+            placeholder: "/mnt/data/containers"
+            tooltip: Directory containing the Enroot container (.sqsh file). The container name is derived from the OS selection.
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_runtime != 'enroot' }}
 
           container_mount_paths:
