@@ -203,10 +203,10 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
         fi
         echo "Using Enroot container: ${ENROOT_CONTAINER_PATH}"
 
-        # Container instance name
-        ENROOT_CONTAINER_NAME="kasmvnc"
+        # Container instance name (includes OS to avoid stale cached instances)
+        ENROOT_CONTAINER_NAME="kasmvnc-${desktop_kasmvnc_os:-rocky9}"
 
-        # Create container instance if it doesn't exist (one-time per user)
+        # Create container instance if it doesn't exist (one-time per user per OS)
         if ! enroot list 2>/dev/null | grep -q "^${ENROOT_CONTAINER_NAME}$"; then
             echo "Creating Enroot container instance..."
             enroot create --name "${ENROOT_CONTAINER_NAME}" "${ENROOT_CONTAINER_PATH}"
