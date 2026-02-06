@@ -175,6 +175,8 @@ jobs:
             default: "gpu:1"
             tooltip: Number of GPUs
             options:
+              - value: ""
+                label: "No GPU (CPU only)"
               - value: "gpu:1"
                 label: "1 GPU"
               - value: "gpu:2"
