@@ -189,7 +189,9 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             exit 1
         fi
 
-        KASMVNC_CONTAINER_SIF="${CONTAINER_DIR}/kasmvnc.sif"
+        # Derive cache filename from OS choice (avoids overwriting when switching OS)
+        bucket_sif_name="kasmvnc-${desktop_kasmvnc_os:-rocky9}.sif"
+        KASMVNC_CONTAINER_SIF="${CONTAINER_DIR}/${bucket_sif_name}"
         mkdir -p "${CONTAINER_DIR}"
 
         if [ ! -f "${KASMVNC_CONTAINER_SIF}" ] || [ ! -s "${KASMVNC_CONTAINER_SIF}" ]; then
