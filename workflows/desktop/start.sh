@@ -214,11 +214,17 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             echo "Enroot container instance already exists"
         fi
 
+        # Create temp home for VNC files (overlay fs at /root doesn't support
+        # colons in filenames, which VNC uses for hostname:display.pid/log)
+        KASMVNC_HOME="/tmp/${USER}-kasmhome"
+        mkdir -p "${KASMVNC_HOME}"
+
         # Start Enroot container (GPU support is enabled by default in Enroot)
         echo "Starting Enroot container..."
         enroot start --rw \
             ${MOUNT_FLAGS} \
-            -e HOME=/tmp/${USER}-kasmhome \
+            -m ${KASMVNC_HOME}:/root \
+            -e HOME=/root \
             -e BASE_PATH="${BASE_PATH}" \
             -e NGINX_PORT="${service_port}" \
             -e KASM_PORT="${kasm_port}" \
