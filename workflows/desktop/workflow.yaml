@@ -350,6 +350,8 @@ jobs:
             tooltip: Choose the operating system for the KasmVNC container
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' }}
             options:
+              - label: "Rocky Linux 8"
+                value: rocky8
               - label: "Rocky Linux 9"
                 value: rocky9
               - label: "Ubuntu 22.04"
