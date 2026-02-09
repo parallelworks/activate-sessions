@@ -410,7 +410,8 @@ jobs:
             hidden: ${{ inputs.desktop.vnc_mode != 'kasmvnc_container' || inputs.desktop.kasmvnc_container_runtime != 'enroot' }}
 
           container_mount_paths:
-            type: textarea
+            type: string
+            textarea: true
             label: Container Mount Paths
             placeholder: "/mnt/data\n/shared/datasets"
             tooltip: Directories to mount into the container (one per line)
