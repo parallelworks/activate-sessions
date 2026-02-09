@@ -204,9 +204,15 @@ jobs:
             hidden: true
 
           kasmvnc_os:
-            type: string
+            type: dropdown
+            label: Container OS
             default: rocky8
-            hidden: true
+            tooltip: Operating system for the KasmVNC container
+            options:
+              - label: "Rocky Linux 8"
+                value: rocky8
+              - label: "Rocky Linux 9"
+                value: rocky9
 
           kasmvnc_enroot_container_dir:
             type: string
