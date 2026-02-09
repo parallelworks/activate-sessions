@@ -122,15 +122,6 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
     fi
     echo "KasmVNC websocket port: ${kasm_port}"
 
-    # Clean up ALL stale VNC sessions from this user before selecting a display
-    echo "Cleaning up stale VNC sessions..."
-    pkill -u $(whoami) -f "Xvnc" 2>/dev/null || true
-    sleep 1  # Give processes time to exit
-    # Clean up any leftover lock/socket files for displays we might use
-    for d in $(seq 1 99); do
-        rm -f "/tmp/.X11-unix/X${d}" "/tmp/.X${d}-lock" 2>/dev/null || true
-    done
-
     # Find available VNC display (5901-5999 range)
     # Checks: port not listening, no running Xvnc process on that display
     find_available_vnc_display() {
