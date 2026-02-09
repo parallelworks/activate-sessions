@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://activate.parallel.works/workflow.schema.json
 ---
 # Desktop for Coreweave - KasmVNC container desktop with Enroot runtime
-# Pre-configured for kasmvnc_container mode with Rocky Linux 9
+# Pre-configured for kasmvnc_container mode with Rocky Linux 8
 
 permissions:
   - "*"
@@ -205,7 +205,7 @@ jobs:
 
           kasmvnc_os:
             type: string
-            default: rocky9
+            default: rocky8
             hidden: true
 
           kasmvnc_enroot_container_dir:
