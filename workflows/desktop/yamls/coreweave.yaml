@@ -154,7 +154,7 @@ jobs:
             label: Partition
             optional: true
             resource: ${{ inputs.resource }}
-            tooltip: Select GPU partition
+            tooltip: Select partition. Leave empty to let SLURM auto-select based on GPU request.
 
           cpus_per_task:
             type: number
@@ -174,7 +174,8 @@ jobs:
             label: GPUs
             type: dropdown
             default: "gpu:1"
-            tooltip: Number of GPUs
+            optional: true
+            tooltip: GPU resource specification (--gres). Select "No GPU" for CPU-only jobs.
             options:
               - value: ""
                 label: "No GPU (CPU only)"
