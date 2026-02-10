@@ -282,6 +282,7 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
 
         # Start Singularity container (--writable-tmpfs allows writes to /var/log/nginx etc.)
         echo "Starting Singularity container..."
+        set -x
         singularity run \
             --writable-tmpfs \
             ${GPU_FLAG} \
@@ -296,6 +297,7 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             --bind /etc/environment:/etc/environment:ro \
             "${KASMVNC_CONTAINER_SIF}" &
         kasmvnc_container_pid=$!
+        set +x
         echo "Singularity container started with PID ${kasmvnc_container_pid}"
     fi
 
