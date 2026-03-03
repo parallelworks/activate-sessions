@@ -64,35 +64,47 @@ jobs:
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
-      # Submit start.sh to compute node
-      - name: Submit session script
+      - name: Run desktop session
         early-cancel: any-job-failed
-        uses: marketplace/job_runner/v4.0
-        with:
-          resource: ${{ inputs.resource }}
-          rundir: "${PW_PARENT_JOB_DIR}"
-          scheduler: ${{ inputs.submit_to_scheduler }}
-          inject_markers: true
-          slurm:
-            is_disabled: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-            account: ${{ inputs.slurm.account }}
-            partition: ${{ inputs.slurm.partition }}
-            qos: ${{ inputs.slurm.qos }}
-            time: ${{ inputs.slurm.time }}
-            cpus_per_task: ${{ inputs.slurm.cpus_per_task }}
-            gres: ${{ inputs.slurm.gres }}
-            scheduler_directives: |
-              ${{ inputs.slurm.scheduler_directives }}
-          pbs:
-            is_disabled: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
-            account: ${{ inputs.pbs.account }}
-            queue: ${{ inputs.pbs.queue }}
-            walltime: ${{ inputs.pbs.walltime }}
-            select: ${{ inputs.pbs.select }}
-            scheduler_directives: |
-              ${{ inputs.pbs.scheduler_directives }}
-          use_existing_script: true
-          script_path: "${PW_PARENT_JOB_DIR}/workflows/${{ inputs.workflow_dir }}/start.sh"
+        run: |
+          set -e
+          export PATH="$PATH:$HOME/pw"
+
+          # Clean up stale marker files from previous runs
+          rm -f CANCEL_STREAMING job.ended job.started HOSTNAME COMPLETED run.sh
+
+          # Create run script from start.sh with job markers
+          cat > run.sh << 'SHEBANG_EOF'
+          #!/bin/bash
+          SHEBANG_EOF
+
+          echo "cd ${PWD}" >> run.sh
+
+          # Add job markers
+          cat >> run.sh << 'MARKER_EOF'
+          export PATH="$PATH:$HOME/pw"
+          touch job.started
+          hostname > HOSTNAME
+          echo "$(date) Job started on $(hostname)"
+          MARKER_EOF
+
+          # Append the actual start.sh
+          cat workflows/${{ inputs.workflow_dir }}/start.sh >> run.sh
+          chmod +x run.sh
+
+          echo "$(date) Running desktop session script"
+
+          # Execute script
+          ./run.sh > run.${PW_JOB_ID}.out 2>&1
+          exit_code=$?
+
+          echo "$(date) Script completed with exit code: ${exit_code}"
+          touch job.ended
+
+          if [[ $exit_code -ne 0 ]]; then
+            echo "$(date) ERROR: Script failed with exit code ${exit_code}"
+            exit ${exit_code}
+          fi
 
       - name: Notify job ended
         early-cancel: any-job-failed
@@ -423,8 +435,8 @@ jobs:
           kasmvnc_enable_gpu:
             type: boolean
             label: Enable GPU Support (--nv)
-            default: true
-            tooltip: Pass --nv flag to Singularity for NVIDIA GPU support (safe on CPU-only nodes)
+            default: false
+            tooltip: Pass --nv flag to Singularity for NVIDIA GPU support. Warning - requires matching GLIBC versions between host and container.
             hidden: true
 
           kasmproxy_runtime:
