@@ -135,8 +135,12 @@ if [[ "${vnc_mode}" == "kasmvnc_container" ]]; then
             if echo "${listening}" | grep -q ":${port} "; then
                 continue
             fi
-            # Check no Xvnc process is running on this display
-            if pgrep -u $(whoami) -f "Xvnc.*:${display_num}( |$)" >/dev/null 2>&1; then
+            # Check X lock file exists (any user, e.g. VNC using unix sockets)
+            if [ -e "/tmp/.X${display_num}-lock" ]; then
+                continue
+            fi
+            # Check no Xvnc process is running on this display (any user)
+            if pgrep -f "Xvnc.*:${display_num}( |$)" >/dev/null 2>&1; then
                 continue
             fi
             echo "${display_num}"
