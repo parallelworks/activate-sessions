@@ -136,11 +136,14 @@ if [ -z "${service_port}" ] || [ "${service_port}" == "undefined" ]; then
   fi
 
   echo "[DEBUG] Running: ~/pw/pw agent open-port"
-  service_port=$(~/pw/pw agent open-port 2>&1) || {
+  port_output=$(~/pw/pw agent open-port 2>&1) || {
     echo "[ERROR] Failed to run ~/pw/pw agent open-port"
-    echo "[ERROR] Output was: ${service_port}"
+    echo "[ERROR] Output was: ${port_output}"
     exit 1
   }
+  echo "[DEBUG] Port allocation full output: '${port_output}'"
+  # Extract just the numeric port - pw CLI may print upgrade notices to stdout
+  service_port=$(echo "${port_output}" | grep -m1 '^[0-9]\+$')
   echo "[DEBUG] Port allocation returned: '${service_port}'"
 fi
 
